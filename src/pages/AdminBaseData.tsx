@@ -1,5 +1,5 @@
 import {FormEvent,useEffect,useState} from 'react'
-import {Edit3,ExternalLink,Image,Plus,Search,Sparkles,Trash2,X} from 'lucide-react'
+import {Check,Edit3,ExternalLink,Image,MapPin,Plus,Search,Sparkles,Trash2,X} from 'lucide-react'
 import {Link,useNavigate,useParams,useSearchParams} from 'react-router-dom'
 import {AdminShell} from './Admin'
 import {recalculateBasicCounts,useAdminStore,useBasicDataStore,type AdminPlace,type ManagedCity,type ManagedIdol,type ManagedWork,type WorkType} from '../stores'
@@ -19,11 +19,22 @@ function ImageCell({url,name}:{url:string;name:string}){return url?<img src={url
 
 export function AdminIdolFormPage(){
  const store=useBasicDataStore(),[params]=useSearchParams(),routeParams=useParams(),edit=store.idols.find(x=>x.id===(routeParams.id||params.get('edit'))),navigate=useNavigate()
+ const places=useAdminStore(state=>state.records),updatePlace=useAdminStore(state=>state.updateRecord)
  const existingCustom=(edit?.roles||[]).filter(role=>!roles.includes(role))
  const existingCityNames=edit?.cityNames?.length?edit.cityNames:(edit?.cities||[]).map(cityId=>store.cities.find(city=>city.id===cityId)?.name).filter(Boolean) as string[]
+ const initialPlaceIds=edit?places.filter(place=>(place.relatedIdolIds||[]).includes(edit.id)||(place.relatedIdolNames||place.relatedIdols).includes(edit.name)).map(place=>place.id):[]
  const[form,setForm]=useState(()=>({name:edit?.name||'',avatar:edit?.avatar||'',roles:(edit?.roles||[]).filter(role=>roles.includes(role)),customRole:existingCustom.join('，'),useCustom:existingCustom.length>0,bio:edit?.bio||'',cityText:existingCityNames.join('，'),fanName:edit?.fanName||''}))
  const[aiLoading,setAiLoading]=useState(false),[aiDraft,setAiDraft]=useState<IdolProfileDraft|null>(null),[aiError,setAiError]=useState('')
+ const[selectedPlaceIds,setSelectedPlaceIds]=useState<string[]>(initialPlaceIds),[placeQuery,setPlaceQuery]=useState('')
  const split=(value:string)=>value.split(/[,，]/).map(item=>item.trim()).filter(Boolean)
+ const togglePlace=(placeId:string)=>{
+  const previousCities=new Set(places.filter(place=>selectedPlaceIds.includes(place.id)).map(place=>place.city).filter(Boolean))
+  const nextIds=selectedPlaceIds.includes(placeId)?selectedPlaceIds.filter(id=>id!==placeId):[...selectedPlaceIds,placeId]
+  const manualCities=split(form.cityText).filter(city=>!previousCities.has(city))
+  const nextCities=places.filter(place=>nextIds.includes(place.id)).map(place=>place.city).filter(Boolean)
+  setSelectedPlaceIds(nextIds)
+  setForm({...form,cityText:[...new Set([...manualCities,...nextCities])].join('，')})
+ }
  const generate=async()=>{
   if(!form.name.trim()){setAiError('请先填写爱豆名称');return}
   setAiLoading(true);setAiError('');setAiDraft(null)
@@ -54,7 +65,42 @@ export function AdminIdolFormPage(){
   })
   setAiDraft(null)
  }
- const submit=(e:FormEvent)=>{e.preventDefault();const cityNames=[...new Set(split(form.cityText))],cityIds=cityNames.map(name=>store.cities.find(city=>city.name.toLowerCase()===name.toLowerCase())?.id).filter(Boolean) as string[],customRoles=form.useCustom?split(form.customRole):[],value:ManagedIdol={id:edit?.id||`idol-${id()}`,name:form.name.trim(),avatar:form.avatar.trim(),roles:[...new Set([...form.roles,...customRoles])],bio:form.bio.trim(),cities:cityIds,cityNames,fanName:form.fanName.trim()||undefined,placeCount:edit?.placeCount||0,createdAt:edit?.createdAt||now()};edit?store.updateIdol(edit.id,value):store.addIdol(value);navigate('/admin/idol/list')}
+ const submit=(e:FormEvent)=>{
+  e.preventDefault()
+  const idolId=edit?.id||`idol-${id()}`
+  const idolName=form.name.trim()
+  const placeCities=places.filter(place=>selectedPlaceIds.includes(place.id)).map(place=>place.city).filter(Boolean)
+  const cityNames=[...new Set([...split(form.cityText),...placeCities])]
+  const cityIds=cityNames.map(name=>store.cities.find(city=>city.name.toLowerCase()===name.toLowerCase())?.id).filter(Boolean) as string[]
+  const customRoles=form.useCustom?split(form.customRole):[]
+  const value:ManagedIdol={
+   id:idolId,
+   name:idolName,
+   avatar:form.avatar.trim(),
+   roles:[...new Set([...form.roles,...customRoles])],
+   bio:form.bio.trim(),
+   cities:cityIds,
+   cityNames,
+   fanName:form.fanName.trim()||undefined,
+   placeCount:places.filter(place=>selectedPlaceIds.includes(place.id)&&place.status==='published').length,
+   createdAt:edit?.createdAt||now()
+  }
+  edit?store.updateIdol(edit.id,value):store.addIdol(value)
+  places.forEach(place=>{
+   const names=place.relatedIdolNames||place.relatedIdols
+   const wasRelated=(place.relatedIdolIds||[]).includes(idolId)||(edit?names.includes(edit.name):false)
+   const selected=selectedPlaceIds.includes(place.id)
+   if(!selected&&!wasRelated)return
+   const cleanedIds=(place.relatedIdolIds||[]).filter(currentId=>currentId!==idolId)
+   const cleanedNames=names.filter(name=>name!==idolName&&name!==edit?.name)
+   const relatedIdolIds=selected?[...new Set([...cleanedIds,idolId])]:cleanedIds
+   const relatedIdolNames=selected?[...new Set([...cleanedNames,idolName])]:cleanedNames
+   updatePlace(place.id,{relatedIdolIds,relatedIdolNames,relatedIdols:relatedIdolNames})
+  })
+  navigate('/admin/idol/list')
+ }
+ const normalizedQuery=placeQuery.trim().toLowerCase()
+ const visiblePlaces=places.filter(place=>!normalizedQuery||[place.name,place.city,place.address].some(value=>value.toLowerCase().includes(normalizedQuery)))
  return <AdminShell title={edit?'编辑爱豆':'录入爱豆'} subtitle="维护地点可关联的爱豆基础资料">
   <form onSubmit={submit} className="max-w-4xl rounded-2xl bg-white p-8 shadow-sm">
    <div className="grid grid-cols-2 gap-6">
@@ -81,6 +127,11 @@ export function AdminIdolFormPage(){
     <div className="col-span-2"><Field label="身份标签"><div className="flex flex-wrap gap-2">{roles.map(role=><label key={role} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 px-3"><input type="checkbox" checked={form.roles.includes(role)} onChange={()=>setForm({...form,roles:toggle(form.roles,role)})}/>{role}</label>)}<label className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 px-3"><input type="checkbox" checked={form.useCustom} onChange={()=>setForm({...form,useCustom:!form.useCustom})}/>其他</label></div>{form.useCustom&&<input className={`${control} mt-3`} value={form.customRole} onChange={e=>setForm({...form,customRole:e.target.value})} placeholder="自己填写身份，多个用逗号分隔，例如：舞者、制作人"/>}</Field></div>
     <div className="col-span-2"><Field label="简介"><textarea rows={4} className={`${control} py-3`} value={form.bio} onChange={e=>setForm({...form,bio:e.target.value})}/></Field></div>
     <div className="col-span-2"><Field label="关联城市"><input list="city-suggestions" className={control} value={form.cityText} onChange={e=>setForm({...form,cityText:e.target.value})} placeholder="输入或选择城市，多个用逗号分隔，例如：深圳、首尔、东京"/><datalist id="city-suggestions">{store.cities.map(city=><option key={city.id} value={city.name}/>)}</datalist><p className="mt-2 font-normal text-slate-400">会自动识别已有城市；也可以直接填写新城市，不限制数量。</p></Field></div>
+    <section className="col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+     <div className="flex items-start justify-between gap-6"><div><h3 className="font-bold text-slate-800">关联地点 <span className="ml-1 text-orange-600">{selectedPlaceIds.length}</span></h3><p className="mt-1 text-xs leading-5 text-slate-500">选择后会同步更新地点的爱豆关联，并自动把地点所在城市加入关联城市。</p></div>{selectedPlaceIds.length>0&&<button type="button" onClick={()=>{const previousCities=new Set(places.filter(place=>selectedPlaceIds.includes(place.id)).map(place=>place.city));setSelectedPlaceIds([]);setForm({...form,cityText:split(form.cityText).filter(city=>!previousCities.has(city)).join('，')})}} className="min-h-11 shrink-0 px-3 text-sm font-semibold text-slate-500 hover:text-red-600">清空选择</button>}</div>
+     <div className="relative mt-4"><Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18}/><input value={placeQuery} onChange={event=>setPlaceQuery(event.target.value)} className={`${control} pl-11`} placeholder="搜索地点名称、城市或地址" aria-label="搜索可关联地点"/></div>
+     {visiblePlaces.length?<div className="mt-4 grid max-h-80 grid-cols-2 gap-3 overflow-y-auto pr-1">{visiblePlaces.map(place=>{const selected=selectedPlaceIds.includes(place.id);return <button type="button" key={place.id} aria-pressed={selected} onClick={()=>togglePlace(place.id)} className={`flex min-h-[76px] items-center gap-3 rounded-xl border p-3 text-left transition active:scale-[.99] ${selected?'border-orange-400 bg-orange-50 shadow-sm':'border-slate-200 bg-white hover:border-slate-300'}`}><span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border ${selected?'border-orange-500 bg-orange-500 text-white':'border-slate-300 bg-white text-transparent'}`}><Check size={16}/></span><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-900">{place.name}</strong><span className="mt-1 flex items-center gap-1 truncate text-xs text-slate-500"><MapPin size={13}/>{place.city} · {place.address}</span></span><span className={`shrink-0 text-xs font-semibold ${place.status==='published'?'text-emerald-700':place.status==='pending'?'text-amber-700':'text-red-700'}`}>{place.status==='published'?'已发布':place.status==='pending'?'待审核':'已驳回'}</span></button>})}</div>:<div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-white py-10 text-center"><MapPin className="mx-auto text-slate-300" size={28}/><p className="mt-2 text-sm text-slate-500">{places.length?'没有匹配的地点':'还没有可关联的地点'}</p>{!places.length&&<Link to="/admin/place/new" className="mt-3 inline-flex min-h-11 items-center text-sm font-bold text-orange-600">先去录入地点</Link>}</div>}
+    </section>
     <Field label="粉丝昵称（选填）"><input className={control} value={form.fanName} onChange={e=>setForm({...form,fanName:e.target.value})}/></Field>
    </div>
    <Submit cancel="/admin/idol/list"/>
