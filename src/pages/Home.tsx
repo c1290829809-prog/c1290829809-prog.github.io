@@ -1,6 +1,6 @@
-import {ArrowRight,Bell,BookOpen,ChevronRight,Clapperboard,Heart,MapPin,Plus,Route,Tv} from 'lucide-react'
+import {ArrowRight,Bell,BookOpen,ChevronLeft,ChevronRight,Clapperboard,Heart,MapPin,Plus,Route,Tv} from 'lucide-react'
 import {Link,useNavigate} from 'react-router-dom'
-import {useEffect} from 'react'
+import {useEffect,useRef,useState} from 'react'
 import {BottomNav,CredibilityBadge,SearchBox} from '../components/ui'
 import {idols as mocks,places,relations} from '../data/mock'
 import {toPublicPlace,toPublicRelation} from '../data/adminAdapters'
@@ -10,11 +10,18 @@ export function HomePage(){
  const nav=useNavigate(),records=useAdminStore(s=>s.records),basic=useBasicDataStore(),toggle=useFavoriteStore(s=>s.toggle),favs=useFavoriteStore(s=>s.placeIds),add=useRouteStore(s=>s.add)
  const published=records.filter(x=>x.status==='published')
  const featured=[...published.map(x=>({place:toPublicPlace(x),relation:toPublicRelation(x),idol:x.relatedIdols[0]||'循迹收录'})),...places.slice(0,4).map((p,i)=>({place:p,relation:relations[i],idol:mocks[i%mocks.length].name}))].slice(0,4)
- const idolList=basic.idols.length?basic.idols:[...mocks,...mocks].map((x,i)=>({...x,id:`${x.id}-${i}`}))
+ const idolSource=basic.idols.length
+  ?basic.idols.map(idol=>({...idol,routeId:idol.id}))
+  :[...mocks,...mocks].map((idol,index)=>({...idol,id:`${idol.id}-copy-${index}`,routeId:idol.id}))
+ const idolList=idolSource.map(idol=>({...idol,hotCount:published.filter(place=>{
+  const idolIds=place.relatedIdolIds??[]
+  const idolNames=place.relatedIdolNames??place.relatedIdols??[]
+  return idolIds.includes(idol.routeId)||idolNames.includes(idol.name)
+ }).length})).sort((a,b)=>b.hotCount-a.hotCount||a.name.localeCompare(b.name,'zh-CN'))
  useEffect(()=>trackEvent({type:'page_view',page:'home'}),[])
  return <main className="min-h-[100dvh] bg-paper pb-28">
   <header className="px-5 pt-8"><h1 className="text-5xl font-black tracking-[-.08em]">循迹 <span className="text-2xl text-[#f4b321]">✦ ✦</span></h1><p className="mt-2 text-sm text-stone-500">沿着喜欢的人，重演认识一座城市</p><div className="mt-5 grid grid-cols-[1fr_56px] gap-3"><SearchBox onClick={()=>nav('/search')}/><button className="flex items-center justify-center rounded-[20px] bg-white shadow-soft active:scale-95"><Bell size={21}/></button></div></header>
-  <Section title="我关注的 Idol" link="全部"><div className="flex gap-5 overflow-x-auto pb-1">{idolList.slice(0,7).map((x,i)=><Link to={`/idol/${x.id.split('-').slice(0,2).join('-')}`} key={`${x.id}-${i}`} className="w-[70px] shrink-0 text-center active:scale-95"><div className="relative"><img src={x.avatar} className="h-[70px] w-[70px] rounded-full object-cover ring-2 ring-white"/>{i%2===0&&<span className="absolute bottom-0 right-0 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-[#ffc62d] text-[10px]">✓</span>}</div><p className="mt-2 truncate text-xs font-semibold">{x.name}</p></Link>)}</div></Section>
+  <HotIdolRail idols={idolList.slice(0,12)}/>
   <Section title="今日推荐"><Link to={`/idol/${basic.idols[0]?.id||mocks[0].id}`} className="relative block h-52 overflow-hidden rounded-[26px] bg-gradient-to-br from-slate-300 to-orange-200 shadow-soft active:scale-[.99]"><img src={featured[0]?.place.images[0]} className="absolute inset-0 h-full w-full object-cover"/><div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent"/><div className="absolute inset-x-0 bottom-0 p-5 text-white"><h2 className="text-2xl font-black">我来到你的城市</h2><p className="mt-1 text-sm">{basic.idols[0]?.name||'曾舜晞'} · 深圳</p><div className="mt-3 flex gap-2"><Tag>公开活动</Tag><Tag>本人公开分享</Tag></div><p className="mt-3 flex items-center gap-1 text-xs"><MapPin size={14}/>关联地点 {Math.max(28,published.length)} 个</p></div><span className="absolute bottom-5 right-5 flex h-12 w-12 items-center justify-center rounded-full bg-[#ffc62d] text-black"><ArrowRight/></span></Link></Section>
   <Section title="同款地点" link="全部地点"><div className="grid grid-cols-2 gap-3">{featured.map(({place,relation,idol})=><article key={place.id} className="overflow-hidden rounded-[22px] bg-white shadow-soft transition hover:-translate-y-1 active:scale-[.98]"><Link to={`/place/${place.id}`}><img src={place.images[0]} className="h-28 w-full object-cover"/><div className="p-3"><h3 className="truncate font-bold">{place.name}</h3><p className="mt-1 truncate text-[11px] text-stone-500">{place.city||'深圳'} · {place.address.slice(0,5)}</p><p className="mt-2 text-xs">{idol} <span className="rounded-full bg-orange-50 px-2 py-1 text-[10px] text-orange-700">{relation.relationType==='filming'?'取景地':'公开分享'}</span></p><p className="mt-2 truncate text-[10px] text-stone-400">#城市漫游 #公开可查</p><div className="mt-2"><CredibilityBadge level={relation.credibility}/></div></div></Link><div className="grid grid-cols-2 border-t border-stone-100 text-[11px] font-semibold"><button onClick={()=>toggle(place.id)} className="flex min-h-11 items-center justify-center gap-1 border-r active:bg-stone-50"><Heart size={14} fill={favs.includes(place.id)?'currentColor':'none'}/>收藏</button><button onClick={()=>add(place.id)} className="flex min-h-11 items-center justify-center gap-1 active:bg-stone-50"><Plus size={14}/>路线</button></div></article>)}</div></Section>
   <Section title="🔥 热门城市"><div className="grid grid-cols-2 gap-3">{['深圳','上海','重庆','北京'].map((city,i)=><Link to={`/city/${basic.cities.find(x=>x.name===city)?.id||'city-shenzhen'}`} key={city} className="relative min-h-28 overflow-hidden rounded-[20px] bg-white p-4 shadow-soft active:scale-95"><b>{city}</b><p className="mt-2 text-xs text-stone-400">{[236,152,185,273][i]} 个地点</p><p className="text-xs text-stone-400">{[18,36,14,22][i]} 条路线</p><span className="absolute bottom-2 right-3 text-4xl text-[#efb648] opacity-50">⌁</span></Link>)}</div></Section>
@@ -25,6 +32,86 @@ export function HomePage(){
    {Icon:BookOpen,label:'书籍',types:['book']}
   ].map(({Icon,label,types},i)=>{const target=basic.works.find(work=>types.includes(work.type));return <Link to={target?`/work/${target.id}`:'/works'} key={label} className="rounded-[20px] bg-white p-4 text-center shadow-soft active:scale-95"><Icon className="mx-auto" size={26}/><b className="mt-2 block text-sm">{label}</b><p className="text-[10px] text-stone-400">{[124,56,38][i]} 部作品</p></Link>})}</div></Section><BottomNav/>
  </main>
+}
+type HotIdol={
+ id:string
+ routeId:string
+ name:string
+ avatar?:string
+ hotCount:number
+}
+function HotIdolRail({idols}:{idols:HotIdol[]}){
+ const railRef=useRef<HTMLDivElement>(null)
+ const dragRef=useRef({active:false,startX:0,scrollLeft:0})
+ const [selectedId,setSelectedId]=useState(idols[0]?.id??'')
+ const [dragging,setDragging]=useState(false)
+ const selected=idols.find(idol=>idol.id===selectedId)??idols[0]
+ useEffect(()=>{
+  if(idols.length&&!idols.some(idol=>idol.id===selectedId))setSelectedId(idols[0].id)
+ },[idols,selectedId])
+ const scroll=(direction:-1|1)=>railRef.current?.scrollBy({left:direction*190,behavior:'smooth'})
+ if(!selected)return null
+ return <section className="mt-7">
+  <div className="mb-3 flex items-center justify-between px-5">
+   <div>
+    <h2 className="text-lg font-black">热门爱豆</h2>
+    <p className="mt-0.5 text-[11px] text-stone-400">左右滑动，挑选想追随的 Idol</p>
+   </div>
+   <div className="flex items-center gap-1">
+    <button type="button" aria-label="向左浏览热门爱豆" onClick={()=>scroll(-1)} className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-stone-500 shadow-soft transition active:scale-90"><ChevronLeft size={18}/></button>
+    <button type="button" aria-label="向右浏览热门爱豆" onClick={()=>scroll(1)} className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-stone-500 shadow-soft transition active:scale-90"><ChevronRight size={18}/></button>
+   </div>
+  </div>
+  <div className="relative">
+   <div
+    ref={railRef}
+    className={`flex snap-x snap-mandatory gap-4 overflow-x-auto scroll-smooth px-5 pb-3 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${dragging?'cursor-grabbing select-none':'cursor-grab'}`}
+    onPointerDown={event=>{
+     if(event.pointerType!=='mouse'||event.button!==0)return
+     dragRef.current={active:true,startX:event.clientX,scrollLeft:event.currentTarget.scrollLeft}
+     event.currentTarget.setPointerCapture(event.pointerId)
+     setDragging(true)
+    }}
+    onPointerMove={event=>{
+     if(!dragRef.current.active)return
+     event.currentTarget.scrollLeft=dragRef.current.scrollLeft-(event.clientX-dragRef.current.startX)
+    }}
+    onPointerUp={event=>{
+     dragRef.current.active=false
+     if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId)
+     setDragging(false)
+    }}
+    onPointerCancel={()=>{dragRef.current.active=false;setDragging(false)}}
+   >
+    {idols.map((idol,index)=>{
+     const active=idol.id===selected.id
+     return <button
+      type="button"
+      aria-pressed={active}
+      aria-label={`选择 ${idol.name}`}
+      key={idol.id}
+      onClick={event=>{
+       setSelectedId(idol.id)
+       event.currentTarget.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'})
+      }}
+      className={`w-[72px] shrink-0 snap-center text-center transition duration-300 active:scale-95 ${active?'-translate-y-1':'opacity-75 hover:opacity-100'}`}
+     >
+      <span className={`relative mx-auto flex h-[70px] w-[70px] items-center justify-center overflow-visible rounded-full transition duration-300 ${active?'ring-4 ring-[#ffc62d] ring-offset-2 ring-offset-[#faf8f5]':'ring-2 ring-white'}`}>
+       {idol.avatar?<img src={idol.avatar} alt="" className="h-full w-full rounded-full object-cover"/>:<span className="flex h-full w-full items-center justify-center rounded-full bg-gradient-to-br from-amber-100 to-orange-200 text-lg font-black text-orange-800">{idol.name.slice(0,2)}</span>}
+       {index<3&&<span aria-label="热门认证" className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-[#ffc62d] text-[10px] font-black text-stone-900">✓</span>}
+      </span>
+      <span className={`mt-2 block truncate text-xs font-semibold transition ${active?'text-orange-600':'text-stone-800'}`}>{idol.name}</span>
+     </button>
+    })}
+   </div>
+   <div className="pointer-events-none absolute inset-y-0 left-0 w-5 bg-gradient-to-r from-[#faf8f5] to-transparent"/>
+   <div className="pointer-events-none absolute inset-y-0 right-0 w-5 bg-gradient-to-l from-[#faf8f5] to-transparent"/>
+  </div>
+  <div className="mx-5 mt-1 flex min-h-12 items-center justify-between gap-3 rounded-2xl bg-white px-4 shadow-soft">
+   <p className="min-w-0 truncate text-xs text-stone-500"><b className="text-stone-900">已选 {selected.name}</b><span className="mx-1.5 text-stone-300">·</span>{selected.hotCount>0?`${selected.hotCount} 个公开地点`:'热门推荐'}</p>
+   <Link to={`/idol/${encodeURIComponent(selected.routeId)}`} className="flex min-h-11 shrink-0 items-center gap-0.5 text-xs font-bold text-orange-600 active:scale-95">查看主页<ChevronRight size={15}/></Link>
+  </div>
+ </section>
 }
 function Section({title,link,children}:{title:string;link?:string;children:React.ReactNode}){return <section className="mt-7 px-5"><div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-black">{title}</h2>{link&&<Link to="/search" className="flex items-center text-xs text-stone-400">{link}<ChevronRight size={15}/></Link>}</div>{children}</section>}
 function Tag({children}:{children:React.ReactNode}){return <span className="rounded-full bg-white/90 px-3 py-1 text-[10px] font-semibold text-stone-800">{children}</span>}
