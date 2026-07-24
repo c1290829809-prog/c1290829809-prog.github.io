@@ -8,7 +8,7 @@ interface FavoriteState{placeIds:string[];toggle:(id:string)=>void;has:(id:strin
 export const useFavoriteStore=create<FavoriteState>()(persist((set,get)=>({placeIds:[],toggle:(id)=>{trackEvent({type:'favorite_click',placeId:id});set(s=>({placeIds:s.placeIds.includes(id)?s.placeIds.filter(x=>x!==id):[...s.placeIds,id]}))},has:(id)=>get().placeIds.includes(id)}),{name:'xunji-favorites'}))
 export interface AdminPlace{
  id:string;name:string;city:string;address:string;lng:number;lat:number;openTime:string;visitable:string;images:string[];
- relatedIdols:string[];relatedIdolNames?:string[];relatedIdolIds?:string[];relatedMovies:string[];relatedVariety:string[];relatedTV:string[];relatedOtherWorks?:string[];
+ relatedIdols:string[];relatedIdolNames?:string[];relatedIdolIds?:string[];relatedMovies:string[];relatedVariety:string[];relatedTV:string[];relatedOtherWorks?:string[];relatedWorkIds?:string[];
  relationType:string;relationDesc:string;evidence:string;credibility:Credibility|null;status:'pending'|'published'|'rejected';createdAt:string;reviewNote?:string;reviewOpinion?:string;reviewedAt?:string
  transportGuide?:string;coreSpots?:string;tips?:string
 }
@@ -20,7 +20,7 @@ export const useAdminStore=create<AdminState>()(persist((set)=>({records:[],addR
 
 export interface ManagedIdol{id:string;name:string;avatar:string;roles:string[];bio:string;cities:string[];cityNames?:string[];fanName?:string;placeCount:number;createdAt:string}
 export type WorkType='movie'|'tv'|'variety'|'book'|'music'|'other'
-export interface ManagedWork{id:string;name:string;type:WorkType;year?:number;region?:string;cover:string;quote:string;relatedIdolIds:string[];relatedCities:string[];placeCount:number;createdAt:string}
+export interface ManagedWork{id:string;name:string;type:WorkType;year?:number;region?:string;cover:string;quote:string;relatedIdolIds:string[];relatedIdolNames?:string[];relatedCities:string[];cityNames?:string[];placeCount:number;createdAt:string}
 export interface ManagedCity{id:string;name:string;region:string;cover:string;story:string;iconUrl:string;placeCount:number;routeCount:number;createdAt:string}
 interface BasicDataState{
  idols:ManagedIdol[];works:ManagedWork[];cities:ManagedCity[];
@@ -64,7 +64,7 @@ if(typeof window!=='undefined'){
 export function recalculateBasicCounts(records:AdminPlace[]){
  const published=records.filter(place=>place.status==='published'),store=useBasicDataStore.getState()
  store.idols.forEach(idol=>{const count=published.filter(place=>(place.relatedIdolIds||[]).includes(idol.id)||(place.relatedIdolNames||place.relatedIdols).includes(idol.name)).length;if(idol.placeCount!==count)store.updateIdol(idol.id,{placeCount:count})})
- store.works.forEach(work=>{const count=published.filter(place=>[...place.relatedMovies,...place.relatedVariety,...place.relatedTV,...(place.relatedOtherWorks||[])].includes(work.name)).length;if(work.placeCount!==count)store.updateWork(work.id,{placeCount:count})})
+ store.works.forEach(work=>{const count=published.filter(place=>(place.relatedWorkIds||[]).includes(work.id)||[...place.relatedMovies,...place.relatedVariety,...place.relatedTV,...(place.relatedOtherWorks||[])].includes(work.name)).length;if(work.placeCount!==count)store.updateWork(work.id,{placeCount:count})})
  store.cities.forEach(city=>{const count=published.filter(place=>place.city===city.name).length;if(city.placeCount!==count)store.updateCity(city.id,{placeCount:count})})
 }
 

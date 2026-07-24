@@ -13,7 +13,7 @@ export function WorksPage(){
  const placeIdolNames=[...new Set(places.flatMap(place=>place.relatedIdolNames||place.relatedIdols))]
  const idols:ManagedIdol[]=[...storedIdols,...placeIdolNames.filter(name=>!storedIdols.some(idol=>idol.name===name)).map(name=>({id:name,name,avatar:'',roles:[],bio:'',cities:[],placeCount:0,createdAt:''}))]
  const[filter,setFilter]=useState<Filter>('all'),[query,setQuery]=useState('')
- const countWorkPlaces=(work:ManagedWork)=>places.filter(p=>[...p.relatedMovies,...p.relatedTV,...p.relatedVariety,...(p.relatedOtherWorks||[])].includes(work.name)).length
+ const countWorkPlaces=(work:ManagedWork)=>places.filter(p=>(p.relatedWorkIds||[]).includes(work.id)||[...p.relatedMovies,...p.relatedTV,...p.relatedVariety,...(p.relatedOtherWorks||[])].includes(work.name)).length
  const countIdolPlaces=(idol:ManagedIdol)=>places.filter(p=>p.relatedIdols.includes(idol.name)).length
  const hot=useMemo<HotItem[]>(()=>{
   const hotWorks=works.map(w=>({id:w.id,kind:'work' as const,name:w.name,image:w.cover,typeLabel:typeNames[w.type]||'作品',placeCount:countWorkPlaces(w),subtitle:`${typeNames[w.type]||'作品'} · ${countWorkPlaces(w)} 个地点`}))
