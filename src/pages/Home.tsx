@@ -111,12 +111,15 @@ function HotIdolRail({idols}:{idols:HotIdol[]}){
     onPointerDown={event=>{
      if(event.pointerType!=='mouse'||event.button!==0)return
      dragRef.current={active:true,startX:event.clientX,scrollLeft:event.currentTarget.scrollLeft,moved:false}
-     event.currentTarget.setPointerCapture(event.pointerId)
-     setDragging(true)
     }}
     onPointerMove={event=>{
      if(!dragRef.current.active)return
-     if(Math.abs(event.clientX-dragRef.current.startX)>4)dragRef.current.moved=true
+     if(Math.abs(event.clientX-dragRef.current.startX)>4&&!dragRef.current.moved){
+      dragRef.current.moved=true
+      event.currentTarget.setPointerCapture(event.pointerId)
+      setDragging(true)
+     }
+     if(!dragRef.current.moved)return
      event.currentTarget.scrollLeft=dragRef.current.scrollLeft-(event.clientX-dragRef.current.startX)
     }}
     onPointerUp={event=>{
