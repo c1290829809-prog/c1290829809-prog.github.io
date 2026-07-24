@@ -4,7 +4,7 @@ import {useEffect,useRef,useState} from 'react'
 import {BottomNav,CredibilityBadge,SearchBox} from '../components/ui'
 import {idols as mocks,places,relations} from '../data/mock'
 import {toPublicPlace,toPublicRelation} from '../data/adminAdapters'
-import {useAdminStore,useBasicDataStore,useFavoriteStore,useRouteStore} from '../stores'
+import {useAdminStore,useBasicDataStore,useFavoriteStore,useFollowingStore,useRouteStore} from '../stores'
 import {trackEvent} from '../services/analytics'
 export function HomePage(){
  const nav=useNavigate(),records=useAdminStore(s=>s.records),basic=useBasicDataStore(),toggle=useFavoriteStore(s=>s.toggle),favs=useFavoriteStore(s=>s.placeIds),add=useRouteStore(s=>s.add)
@@ -43,6 +43,8 @@ type HotIdol={
 function HotIdolRail({idols}:{idols:HotIdol[]}){
  const railRef=useRef<HTMLDivElement>(null)
  const dragRef=useRef({active:false,startX:0,scrollLeft:0})
+ const followedIds=useFollowingStore(state=>state.idolIds)
+ const follow=useFollowingStore(state=>state.follow)
  const [selectedId,setSelectedId]=useState(idols[0]?.id??'')
  const [dragging,setDragging]=useState(false)
  const selected=idols.find(idol=>idol.id===selectedId)??idols[0]
@@ -85,30 +87,35 @@ function HotIdolRail({idols}:{idols:HotIdol[]}){
    >
     {idols.map((idol,index)=>{
      const active=idol.id===selected.id
-     return <button
-      type="button"
-      aria-pressed={active}
-      aria-label={`选择 ${idol.name}`}
-      key={idol.id}
-      onClick={event=>{
-       setSelectedId(idol.id)
-       event.currentTarget.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'})
-      }}
-      className={`w-[72px] shrink-0 snap-center text-center transition duration-300 active:scale-95 ${active?'-translate-y-1':'opacity-75 hover:opacity-100'}`}
-     >
-      <span className={`relative mx-auto flex h-[70px] w-[70px] items-center justify-center overflow-visible rounded-full transition duration-300 ${active?'ring-4 ring-[#ffc62d] ring-offset-2 ring-offset-[#faf8f5]':'ring-2 ring-white'}`}>
-       {idol.avatar?<img src={idol.avatar} alt="" className="h-full w-full rounded-full object-cover"/>:<span className="flex h-full w-full items-center justify-center rounded-full bg-gradient-to-br from-amber-100 to-orange-200 text-lg font-black text-orange-800">{idol.name.slice(0,2)}</span>}
-       {index<3&&<span aria-label="热门认证" className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-[#ffc62d] text-[10px] font-black text-stone-900">✓</span>}
-      </span>
-      <span className={`mt-2 block truncate text-xs font-semibold transition ${active?'text-orange-600':'text-stone-800'}`}>{idol.name}</span>
-     </button>
+     const followed=followedIds.includes(idol.routeId)
+     return <div key={idol.id} className={`relative w-[76px] shrink-0 snap-center text-center transition duration-300 ${active?'-translate-y-1':'opacity-75 hover:opacity-100'}`}>
+      <button
+       type="button"
+       aria-pressed={active}
+       aria-label={`选择 ${idol.name}`}
+       onClick={event=>{
+        setSelectedId(idol.id)
+        event.currentTarget.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'})
+       }}
+       className="w-full transition active:scale-95"
+      >
+       <span className={`mx-auto flex h-[70px] w-[70px] items-center justify-center rounded-full transition duration-300 ${active?'ring-4 ring-[#ffc62d] ring-offset-2 ring-offset-[#faf8f5]':'ring-2 ring-white'}`}>
+        {idol.avatar?<img src={idol.avatar} alt="" className="h-full w-full rounded-full object-cover"/>:<span className="flex h-full w-full items-center justify-center rounded-full bg-gradient-to-br from-amber-100 to-orange-200 text-lg font-black text-orange-800">{idol.name.slice(0,2)}</span>}
+       </span>
+       <span className={`mt-2 block truncate text-xs font-semibold transition ${active?'text-orange-600':'text-stone-800'}`}>{idol.name}</span>
+      </button>
+      {followed
+       ?<span aria-label={`已关注 ${idol.name}`} className="absolute right-0 top-12 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-[#ffc62d] text-[11px] font-black text-stone-900 shadow-sm">✓</span>
+       :<button type="button" aria-label={`关注 ${idol.name}`} onClick={()=>follow(idol.routeId)} className="absolute -right-2 top-9 flex h-11 w-11 items-center justify-center rounded-full transition active:scale-90"><span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-[#ffc62d] text-lg font-bold leading-none text-stone-900 shadow-sm">+</span></button>}
+      {index<3&&<span className="sr-only">热门推荐</span>}
+     </div>
     })}
    </div>
    <div className="pointer-events-none absolute inset-y-0 left-0 w-5 bg-gradient-to-r from-[#faf8f5] to-transparent"/>
    <div className="pointer-events-none absolute inset-y-0 right-0 w-5 bg-gradient-to-l from-[#faf8f5] to-transparent"/>
   </div>
   <div className="mx-5 mt-1 flex min-h-12 items-center justify-between gap-3 rounded-2xl bg-white px-4 shadow-soft">
-   <p className="min-w-0 truncate text-xs text-stone-500"><b className="text-stone-900">已选 {selected.name}</b><span className="mx-1.5 text-stone-300">·</span>{selected.hotCount>0?`${selected.hotCount} 个公开地点`:'热门推荐'}</p>
+   <p className="min-w-0 truncate text-xs text-stone-500"><b className="text-stone-900">已选 {selected.name}</b><span className="mx-1.5 text-stone-300">·</span>{followedIds.includes(selected.routeId)?'已关注':selected.hotCount>0?`${selected.hotCount} 个公开地点`:'热门推荐'}</p>
    <Link to={`/idol/${encodeURIComponent(selected.routeId)}`} className="flex min-h-11 shrink-0 items-center gap-0.5 text-xs font-bold text-orange-600 active:scale-95">查看主页<ChevronRight size={15}/></Link>
   </div>
  </section>

@@ -6,6 +6,12 @@ interface RouteState{placeIds:string[];add:(id:string)=>void;remove:(id:string)=
 export const useRouteStore=create<RouteState>()(persist((set)=>({placeIds:[],add:(id)=>{trackEvent({type:'route_add',placeId:id});set(s=>({placeIds:s.placeIds.includes(id)?s.placeIds:[...s.placeIds,id]}))},remove:(id)=>set(s=>({placeIds:s.placeIds.filter(x=>x!==id)})),reorder:(from,to)=>set(s=>{const n=[...s.placeIds];const [m]=n.splice(from,1);n.splice(to,0,m);return{placeIds:n}}),clear:()=>set({placeIds:[]})}),{name:'xunji-route'}))
 interface FavoriteState{placeIds:string[];toggle:(id:string)=>void;has:(id:string)=>boolean}
 export const useFavoriteStore=create<FavoriteState>()(persist((set,get)=>({placeIds:[],toggle:(id)=>{trackEvent({type:'favorite_click',placeId:id});set(s=>({placeIds:s.placeIds.includes(id)?s.placeIds.filter(x=>x!==id):[...s.placeIds,id]}))},has:(id)=>get().placeIds.includes(id)}),{name:'xunji-favorites'}))
+interface FollowingState{idolIds:string[];follow:(id:string)=>void;has:(id:string)=>boolean}
+export const useFollowingStore=create<FollowingState>()(persist((set,get)=>({
+ idolIds:[],
+ follow:id=>set(state=>({idolIds:state.idolIds.includes(id)?state.idolIds:[...state.idolIds,id]})),
+ has:id=>get().idolIds.includes(id)
+}),{name:'xunji-followed-idols'}))
 export interface AdminPlace{
  id:string;name:string;city:string;address:string;lng:number;lat:number;openTime:string;visitable:string;images:string[];
  relatedIdols:string[];relatedIdolNames?:string[];relatedIdolIds?:string[];relatedMovies:string[];relatedVariety:string[];relatedTV:string[];relatedOtherWorks?:string[];relatedWorkIds?:string[];
