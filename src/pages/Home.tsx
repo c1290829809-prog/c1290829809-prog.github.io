@@ -6,6 +6,7 @@ import {idols as mocks,places,relations} from '../data/mock'
 import {toPublicPlace,toPublicRelation} from '../data/adminAdapters'
 import {useAdminStore,useBasicDataStore,useFavoriteStore,useFollowingStore,useRouteStore} from '../stores'
 import {trackEvent} from '../services/analytics'
+import type {Place} from '../types'
 export function HomePage(){
  const nav=useNavigate(),records=useAdminStore(s=>s.records),basic=useBasicDataStore(),toggle=useFavoriteStore(s=>s.toggle),favs=useFavoriteStore(s=>s.placeIds),add=useRouteStore(s=>s.add)
  const followedIds=useFollowingStore(state=>state.idolIds)
@@ -21,12 +22,15 @@ export function HomePage(){
  }).length})).sort((a,b)=>b.hotCount-a.hotCount||a.name.localeCompare(b.name,'zh-CN'))
  const latestFollowedId=followedIds[followedIds.length-1]
  const recommendedIdol=(idolList.find(idol=>idol.routeId===latestFollowedId)??idolList[0])!
- const recommendedCity=published.find(place=>(place.relatedIdolIds??[]).includes(recommendedIdol.routeId)||(place.relatedIdolNames??place.relatedIdols??[]).includes(recommendedIdol.name))?.city||'深圳'
+ const recommendedRecords=published.filter(place=>(place.relatedIdolIds??[]).includes(recommendedIdol.routeId)||(place.relatedIdolNames??place.relatedIdols??[]).includes(recommendedIdol.name))
+ const matchingMock=mocks.find(idol=>idol.id===recommendedIdol.routeId||idol.name===recommendedIdol.name)
+ const mockPlaceIds=matchingMock?relations.filter(relation=>relation.idolId===matchingMock.id).map(relation=>relation.placeId):[]
+ const recommendedPlaces=Array.from(new Map([...recommendedRecords.map(toPublicPlace),...places.filter(place=>mockPlaceIds.includes(place.id))].map(place=>[place.id,place])).values())
  useEffect(()=>trackEvent({type:'page_view',page:'home'}),[])
  return <main className="min-h-[100dvh] bg-paper pb-28">
   <header className="px-5 pt-8"><h1 className="text-5xl font-black tracking-[-.08em]">循迹 <span className="text-2xl text-[#f4b321]">✦ ✦</span></h1><p className="mt-2 text-sm text-stone-500">沿着喜欢的人，重演认识一座城市</p><div className="mt-5 grid grid-cols-[1fr_56px] gap-3"><SearchBox onClick={()=>nav('/search')}/><button className="flex items-center justify-center rounded-[20px] bg-white shadow-soft active:scale-95"><Bell size={21}/></button></div></header>
   <HotIdolRail idols={idolList.slice(0,12)}/>
-  <Section title="今日推荐"><Link to={`/idol/${encodeURIComponent(recommendedIdol.routeId)}`} className="relative block h-52 overflow-hidden rounded-[26px] bg-gradient-to-br from-amber-100 via-orange-100 to-stone-300 shadow-soft active:scale-[.99]">{recommendedIdol.avatar?<img src={recommendedIdol.avatar} alt={recommendedIdol.name} className="absolute inset-0 h-full w-full object-cover object-top"/>:<div className="absolute inset-0 flex items-center justify-center text-7xl font-black text-orange-300">{recommendedIdol.name.slice(0,2)}</div>}<div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/15 to-transparent"/><div className="absolute inset-x-0 bottom-0 p-5 text-white"><h2 className="text-2xl font-black">我来到你的城市</h2><p className="mt-1 text-sm">{recommendedIdol.name} · {recommendedCity}</p><div className="mt-3 flex gap-2"><Tag>公开活动</Tag><Tag>本人公开分享</Tag></div><p className="mt-3 flex items-center gap-1 text-xs"><MapPin size={14}/>关联地点 {recommendedIdol.hotCount} 个</p></div><span className="absolute bottom-5 right-5 flex h-12 w-12 items-center justify-center rounded-full bg-[#ffc62d] text-black"><ArrowRight/></span></Link></Section>
+  <Section title="今日推荐"><RecommendedPlaceCarousel idolName={recommendedIdol.name} places={recommendedPlaces}/></Section>
   <Section title="同款地点" link="全部地点"><div className="grid grid-cols-2 gap-3">{featured.map(({place,relation,idol})=><article key={place.id} className="overflow-hidden rounded-[22px] bg-white shadow-soft transition hover:-translate-y-1 active:scale-[.98]"><Link to={`/place/${place.id}`}><img src={place.images[0]} className="h-28 w-full object-cover"/><div className="p-3"><h3 className="truncate font-bold">{place.name}</h3><p className="mt-1 truncate text-[11px] text-stone-500">{place.city||'深圳'} · {place.address.slice(0,5)}</p><p className="mt-2 text-xs">{idol} <span className="rounded-full bg-orange-50 px-2 py-1 text-[10px] text-orange-700">{relation.relationType==='filming'?'取景地':'公开分享'}</span></p><p className="mt-2 truncate text-[10px] text-stone-400">#城市漫游 #公开可查</p><div className="mt-2"><CredibilityBadge level={relation.credibility}/></div></div></Link><div className="grid grid-cols-2 border-t border-stone-100 text-[11px] font-semibold"><button onClick={()=>toggle(place.id)} className="flex min-h-11 items-center justify-center gap-1 border-r active:bg-stone-50"><Heart size={14} fill={favs.includes(place.id)?'currentColor':'none'}/>收藏</button><button onClick={()=>add(place.id)} className="flex min-h-11 items-center justify-center gap-1 active:bg-stone-50"><Plus size={14}/>路线</button></div></article>)}</div></Section>
   <Section title="🔥 热门城市"><div className="grid grid-cols-2 gap-3">{['深圳','上海','重庆','北京'].map((city,i)=><Link to={`/city/${basic.cities.find(x=>x.name===city)?.id||'city-shenzhen'}`} key={city} className="relative min-h-28 overflow-hidden rounded-[20px] bg-white p-4 shadow-soft active:scale-95"><b>{city}</b><p className="mt-2 text-xs text-stone-400">{[236,152,185,273][i]} 个地点</p><p className="text-xs text-stone-400">{[18,36,14,22][i]} 条路线</p><span className="absolute bottom-2 right-3 text-4xl text-[#efb648] opacity-50">⌁</span></Link>)}</div></Section>
   <Section title="推荐路线" link="全部路线"><div className="space-y-3">{['跟着公开足迹逛深圳','练云同款上海半日路线'].map((name,i)=><Link to="/route/builder" key={name} className="grid grid-cols-[72px_1fr_20px] items-center gap-3 rounded-[20px] bg-white p-3 shadow-soft active:scale-[.99]"><img src={featured[i]?.place.images[0]} className="h-16 w-16 rounded-2xl object-cover"/><div><b className="text-sm">{name}</b><p className="mt-1 text-xs text-stone-400">05:56时 · 12个地点 · 3.2 km</p></div><ChevronRight size={18}/></Link>)}</div></Section>
@@ -36,6 +40,38 @@ export function HomePage(){
    {Icon:BookOpen,label:'书籍',types:['book']}
   ].map(({Icon,label,types},i)=>{const target=basic.works.find(work=>types.includes(work.type));return <Link to={target?`/work/${target.id}`:'/works'} key={label} className="rounded-[20px] bg-white p-4 text-center shadow-soft active:scale-95"><Icon className="mx-auto" size={26}/><b className="mt-2 block text-sm">{label}</b><p className="text-[10px] text-stone-400">{[124,56,38][i]} 部作品</p></Link>})}</div></Section><BottomNav/>
  </main>
+}
+function RecommendedPlaceCarousel({idolName,places}:{idolName:string;places:Place[]}){
+ const[current,setCurrent]=useState(0)
+ useEffect(()=>{
+  setCurrent(0)
+  if(places.length<2)return
+  const timer=window.setInterval(()=>setCurrent(index=>(index+1)%places.length),4500)
+  return()=>window.clearInterval(timer)
+ },[idolName,places.length])
+ const active=places[current%Math.max(places.length,1)]
+ if(!active)return <div className="flex h-44 flex-col items-center justify-center rounded-[26px] border border-dashed border-orange-200 bg-gradient-to-br from-orange-50 to-amber-100 px-6 text-center"><MapPin className="text-orange-400"/><b className="mt-3">暂无已发布的关联地点</b><p className="mt-1 text-xs text-stone-400">地点通过审核后会出现在这里</p></div>
+ const image=active.images[0]
+ const previous=()=>setCurrent(index=>(index-1+places.length)%places.length)
+ const next=()=>setCurrent(index=>(index+1)%places.length)
+ return <article className="relative h-52 overflow-hidden rounded-[26px] bg-gradient-to-br from-amber-100 to-orange-200 shadow-soft">
+  <Link to={`/place/${active.id}`} aria-label={`查看地点 ${active.name}`} className="absolute inset-0 block active:scale-[.99]">
+   {image?<img key={`${active.id}-${image}`} src={image} alt={active.name} className="h-full w-full object-cover"/>:<div className="flex h-full w-full items-center justify-center text-5xl font-black text-orange-300">{active.name.slice(0,2)}</div>}
+   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/15 to-transparent"/>
+   <div className="absolute inset-x-0 bottom-0 p-5 pr-20 text-white" aria-live="polite">
+    <p className="text-[11px] font-semibold text-white/75">{idolName} 的关联地点</p>
+    <h2 className="mt-1 truncate text-2xl font-black">{active.name}</h2>
+    <p className="mt-1 truncate text-xs text-white/80">{active.city||'深圳'} · {active.address}</p>
+    <p className="mt-3 flex items-center gap-1 text-xs"><MapPin size={14}/>关联地点 {current+1} / {places.length}</p>
+   </div>
+   <span className="absolute bottom-5 right-5 flex h-12 w-12 items-center justify-center rounded-full bg-[#ffc62d] text-black shadow-lg"><ArrowRight/></span>
+  </Link>
+  {places.length>1&&<>
+   <button type="button" onClick={previous} aria-label="上一个关联地点" className="absolute left-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm transition active:scale-90"><ChevronLeft size={19}/></button>
+   <button type="button" onClick={next} aria-label="下一个关联地点" className="absolute right-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm transition active:scale-90"><ChevronRight size={19}/></button>
+   <div className="absolute right-5 top-4 z-10 flex gap-1.5">{places.map((place,index)=><button type="button" key={place.id} onClick={()=>setCurrent(index)} aria-label={`显示 ${place.name}`} className={`h-2 rounded-full transition-all ${index===current?'w-5 bg-[#ffc62d]':'w-2 bg-white/70'}`}/>)}</div>
+  </>}
+ </article>
 }
 type HotIdol={
  id:string
