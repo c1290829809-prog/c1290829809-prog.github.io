@@ -9,7 +9,7 @@ type HotItem={id:string;kind:'work'|'idol';name:string;image:string;typeLabel:st
 const typeNames:Record<string,string>={movie:'电影',tv:'电视剧',variety:'综艺',book:'小说',music:'音乐',other:'动漫'}
 
 export function WorksPage(){
- const works=useBasicDataStore(s=>s.works),storedIdols=useBasicDataStore(s=>s.idols),records=useAdminStore(s=>s.records),places=records.filter(p=>p.status==='published')
+ const works=useBasicDataStore(s=>s.works).filter((work):work is ManagedWork=>Boolean(work)&&typeof work.name==='string'),storedIdols=useBasicDataStore(s=>s.idols).filter(Boolean),records=useAdminStore(s=>s.records),places=records.filter(p=>p.status==='published')
  const placeIdolNames=[...new Set(places.flatMap(place=>place.relatedIdolNames||place.relatedIdols))]
  const idols:ManagedIdol[]=[...storedIdols,...placeIdolNames.filter(name=>!storedIdols.some(idol=>idol.name===name)).map(name=>({id:name,name,avatar:'',roles:[],bio:'',cities:[],placeCount:0,createdAt:''}))]
  const[filter,setFilter]=useState<Filter>('all'),[query,setQuery]=useState('')

@@ -50,8 +50,27 @@ function readBasicData<T>(key:string,fallback:T):T{
  }catch{}
  return fallback
 }
+function normalizeIdols(value:unknown):ManagedIdol[]{
+ if(!Array.isArray(value))return seedIdols
+ return value.filter((item):item is Record<string,any>=>Boolean(item)&&typeof item==='object'&&typeof item.id==='string'&&typeof item.name==='string').map(item=>({
+  id:item.id,name:item.name,avatar:typeof item.avatar==='string'?item.avatar:'',roles:Array.isArray(item.roles)?item.roles.filter((role:unknown)=>typeof role==='string'):[],bio:typeof item.bio==='string'?item.bio:'',cities:Array.isArray(item.cities)?item.cities.filter((city:unknown)=>typeof city==='string'):[],cityNames:Array.isArray(item.cityNames)?item.cityNames.filter((city:unknown)=>typeof city==='string'):undefined,fanName:typeof item.fanName==='string'?item.fanName:undefined,placeCount:Number.isFinite(item.placeCount)?item.placeCount:0,createdAt:typeof item.createdAt==='string'?item.createdAt:createdAt
+ }))
+}
+function normalizeWorks(value:unknown):ManagedWork[]{
+ if(!Array.isArray(value))return seedWorks
+ const validTypes:WorkType[]=['movie','tv','variety','book','music','other']
+ return value.filter((item):item is Record<string,any>=>Boolean(item)&&typeof item==='object'&&typeof item.id==='string'&&typeof item.name==='string').map(item=>({
+  id:item.id,name:item.name,type:validTypes.includes(item.type)?item.type:'other',year:Number.isFinite(item.year)?item.year:undefined,region:typeof item.region==='string'?item.region:undefined,cover:typeof item.cover==='string'?item.cover:'',quote:typeof item.quote==='string'?item.quote:'',relatedIdolIds:Array.isArray(item.relatedIdolIds)?item.relatedIdolIds.filter((id:unknown)=>typeof id==='string'):[],relatedIdolNames:Array.isArray(item.relatedIdolNames)?item.relatedIdolNames.filter((name:unknown)=>typeof name==='string'):undefined,relatedCities:Array.isArray(item.relatedCities)?item.relatedCities.filter((id:unknown)=>typeof id==='string'):[],cityNames:Array.isArray(item.cityNames)?item.cityNames.filter((name:unknown)=>typeof name==='string'):undefined,placeCount:Number.isFinite(item.placeCount)?item.placeCount:0,createdAt:typeof item.createdAt==='string'?item.createdAt:createdAt
+ }))
+}
+function normalizeCities(value:unknown):ManagedCity[]{
+ if(!Array.isArray(value))return seedCities
+ return value.filter((item):item is Record<string,any>=>Boolean(item)&&typeof item==='object'&&typeof item.id==='string'&&typeof item.name==='string').map(item=>({
+  id:item.id,name:item.name,region:typeof item.region==='string'?item.region:'',cover:typeof item.cover==='string'?item.cover:'',story:typeof item.story==='string'?item.story:'',iconUrl:typeof item.iconUrl==='string'?item.iconUrl:'',placeCount:Number.isFinite(item.placeCount)?item.placeCount:0,routeCount:Number.isFinite(item.routeCount)?item.routeCount:0,createdAt:typeof item.createdAt==='string'?item.createdAt:createdAt
+ }))
+}
 export const useBasicDataStore=create<BasicDataState>()((set)=>({
- idols:readBasicData('xunji_idols',seedIdols),works:readBasicData('xunji_works',seedWorks),cities:readBasicData('xunji_cities',seedCities),
+ idols:normalizeIdols(readBasicData('xunji_idols',seedIdols)),works:normalizeWorks(readBasicData('xunji_works',seedWorks)),cities:normalizeCities(readBasicData('xunji_cities',seedCities)),
  addIdol:value=>set(s=>({idols:[value,...s.idols]})),updateIdol:(id,value)=>set(s=>({idols:s.idols.map(x=>x.id===id?{...x,...value}:x)})),removeIdol:id=>set(s=>({idols:s.idols.filter(x=>x.id!==id),works:s.works.map(w=>({...w,relatedIdolIds:w.relatedIdolIds.filter(x=>x!==id)}))})),
  addWork:value=>set(s=>({works:[value,...s.works]})),updateWork:(id,value)=>set(s=>({works:s.works.map(x=>x.id===id?{...x,...value}:x)})),removeWork:id=>set(s=>({works:s.works.filter(x=>x.id!==id)})),
  addCity:value=>set(s=>({cities:[value,...s.cities]})),updateCity:(id,value)=>set(s=>({cities:s.cities.map(x=>x.id===id?{...x,...value}:x)})),removeCity:id=>set(s=>({cities:s.cities.filter(x=>x.id!==id),idols:s.idols.map(i=>({...i,cities:i.cities.filter(x=>x!==id)})),works:s.works.map(w=>({...w,relatedCities:w.relatedCities.filter(x=>x!==id)}))}))
