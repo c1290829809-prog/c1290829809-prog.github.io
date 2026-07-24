@@ -42,7 +42,7 @@ type HotIdol={
 }
 function HotIdolRail({idols}:{idols:HotIdol[]}){
  const railRef=useRef<HTMLDivElement>(null)
- const dragRef=useRef({active:false,startX:0,scrollLeft:0})
+ const dragRef=useRef({active:false,startX:0,scrollLeft:0,moved:false})
  const followedIds=useFollowingStore(state=>state.idolIds)
  const follow=useFollowingStore(state=>state.follow)
  const [selectedId,setSelectedId]=useState(idols[0]?.id??'')
@@ -70,12 +70,13 @@ function HotIdolRail({idols}:{idols:HotIdol[]}){
     className={`flex snap-x snap-mandatory gap-4 overflow-x-auto scroll-smooth px-5 pb-3 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${dragging?'cursor-grabbing select-none':'cursor-grab'}`}
     onPointerDown={event=>{
      if(event.pointerType!=='mouse'||event.button!==0)return
-     dragRef.current={active:true,startX:event.clientX,scrollLeft:event.currentTarget.scrollLeft}
+     dragRef.current={active:true,startX:event.clientX,scrollLeft:event.currentTarget.scrollLeft,moved:false}
      event.currentTarget.setPointerCapture(event.pointerId)
      setDragging(true)
     }}
     onPointerMove={event=>{
      if(!dragRef.current.active)return
+     if(Math.abs(event.clientX-dragRef.current.startX)>4)dragRef.current.moved=true
      event.currentTarget.scrollLeft=dragRef.current.scrollLeft-(event.clientX-dragRef.current.startX)
     }}
     onPointerUp={event=>{
@@ -86,27 +87,22 @@ function HotIdolRail({idols}:{idols:HotIdol[]}){
     onPointerCancel={()=>{dragRef.current.active=false;setDragging(false)}}
    >
     {idols.map((idol,index)=>{
-     const active=idol.id===selected.id
      const followed=followedIds.includes(idol.routeId)
-     return <div key={idol.id} className={`relative w-[76px] shrink-0 snap-center text-center transition duration-300 ${active?'-translate-y-1':'opacity-75 hover:opacity-100'}`}>
-      <button
-       type="button"
-       aria-pressed={active}
-       aria-label={`选择 ${idol.name}`}
-       onClick={event=>{
-        setSelectedId(idol.id)
-        event.currentTarget.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'})
-       }}
-       className="w-full transition active:scale-95"
+     return <div key={idol.id} className={`relative w-[76px] shrink-0 snap-center text-center transition duration-300 ${followed?'-translate-y-1':'hover:-translate-y-0.5'}`}>
+      <Link
+       to={`/idol/${encodeURIComponent(idol.routeId)}`}
+       aria-label={`进入 ${idol.name} 的个人主页`}
+       onClick={event=>{if(dragRef.current.moved)event.preventDefault()}}
+       className="block w-full transition active:scale-95"
       >
-       <span className={`mx-auto flex h-[70px] w-[70px] items-center justify-center rounded-full transition duration-300 ${active?'ring-4 ring-[#ffc62d] ring-offset-2 ring-offset-[#faf8f5]':'ring-2 ring-white'}`}>
+       <span className={`mx-auto flex h-[70px] w-[70px] items-center justify-center rounded-full transition duration-300 ${followed?'ring-4 ring-[#ffc62d] ring-offset-2 ring-offset-[#faf8f5] shadow-[0_0_18px_rgba(255,198,45,.4)]':'ring-2 ring-white'}`}>
         {idol.avatar?<img src={idol.avatar} alt="" className="h-full w-full rounded-full object-cover"/>:<span className="flex h-full w-full items-center justify-center rounded-full bg-gradient-to-br from-amber-100 to-orange-200 text-lg font-black text-orange-800">{idol.name.slice(0,2)}</span>}
        </span>
-       <span className={`mt-2 block truncate text-xs font-semibold transition ${active?'text-orange-600':'text-stone-800'}`}>{idol.name}</span>
-      </button>
+       <span className={`mt-2 block truncate text-xs font-semibold transition ${followed?'text-orange-600':'text-stone-800'}`}>{idol.name}</span>
+      </Link>
       {followed
        ?<span aria-label={`已关注 ${idol.name}`} className="absolute right-0 top-12 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-[#ffc62d] text-[11px] font-black text-stone-900 shadow-sm">✓</span>
-       :<button type="button" aria-label={`关注 ${idol.name}`} onClick={()=>follow(idol.routeId)} className="absolute -right-2 top-9 flex h-11 w-11 items-center justify-center rounded-full transition active:scale-90"><span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-[#ffc62d] text-lg font-bold leading-none text-stone-900 shadow-sm">+</span></button>}
+       :<button type="button" aria-label={`关注 ${idol.name}`} onClick={()=>{follow(idol.routeId);setSelectedId(idol.id)}} className="absolute -right-2 top-9 flex h-11 w-11 items-center justify-center rounded-full transition active:scale-90"><span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-[#ffc62d] text-lg font-bold leading-none text-stone-900 shadow-sm">+</span></button>}
       {index<3&&<span className="sr-only">热门推荐</span>}
      </div>
     })}
