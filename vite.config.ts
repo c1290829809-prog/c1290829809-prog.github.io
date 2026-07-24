@@ -22,6 +22,81 @@ function deepSeekProxy():Plugin{
  return {
   name:'xunji-deepseek-proxy',
   configureServer(server){
+   server.middlewares.use('/api/ai/idol-profile',async(req,res)=>{
+    res.setHeader('Content-Type','application/json; charset=utf-8')
+    if(req.method!=='POST'){
+     res.statusCode=405
+     res.end(JSON.stringify({error:'仅支持 POST 请求'}))
+     return
+    }
+    try{
+     const chunks:Buffer[]=[]
+     let size=0
+     for await(const chunk of req){
+      size+=chunk.length
+      if(size>10_000) throw new Error('输入内容过长')
+      chunks.push(chunk)
+     }
+     const {name,context={}}=JSON.parse(Buffer.concat(chunks).toString('utf8'))
+     if(typeof name!=='string'||!name.trim()) throw new Error('请先填写爱豆名称')
+
+     const env=readServerEnv()
+     const apiKey=env.AI_API_KEY
+     const baseUrl=(env.AI_BASE_URL||'https://api.deepseek.com').replace(/\/$/,'')
+     const model=env.AI_MODEL||'deepseek-v4-flash'
+     if(!apiKey) throw new Error('服务端尚未配置 AI_API_KEY')
+
+     const prompt=`你是“循迹”城市打卡产品的公开人物资料编辑助手。
+请根据姓名“${name.trim()}”生成一份可编辑的爱豆资料草稿。
+
+只输出一个 JSON 对象，不要解释，不要 Markdown。字段为：
+name, roles, customRoles, bio, cityNames, fanName, confidence, notice。
+
+要求：
+- 只使用广为人知的公开职业资料，不得生成私人信息、住址、联系方式或未经证实的经历。
+- 如果姓名存在歧义或你不能确认对应人物，confidence="low"，不确定字段返回空值，
+  notice 明确提示需要补充身份信息，不得凭空猜测。
+- roles 只能从“演员、歌手、偶像、主持人、导演、作家、音乐人”中选择。
+- 不在上述范围的公开职业放入 customRoles；不要为了填满而添加标签。
+- bio 使用中性、简洁的中文，约 60-140 字；避免夸张评价、粉圈口号和未经证实的奖项。
+- fanName 仅填写广泛公开且能较有把握确认的粉丝昵称，否则留空。
+- cityNames 表示循迹产品中与公开活动、作品地点或已有地点记录有关的城市。
+  保留已有城市；不要仅因为出生地、籍贯或居住传闻增加城市。
+- 不生成头像 URL。
+- confidence 只能是 high、medium、low。
+- notice 固定提醒：AI 资料草稿，保存前需对照官方主页、认证账号或可靠公开资料核实。
+
+现有资料：
+身份标签=${(context.roles||[]).join('、')||'未填'}
+简介=${context.bio||'未填'}
+关联城市=${(context.cityNames||[]).join('、')||'未填'}
+粉丝昵称=${context.fanName||'未填'}
+系统已有城市=${(context.availableCities||[]).join('、')||'无'}`
+
+     const response=await fetch(`${baseUrl}/chat/completions`,{
+      method:'POST',
+      headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},
+      body:JSON.stringify({
+       model,
+       response_format:{type:'json_object'},
+       max_tokens:1000,
+       temperature:0.2,
+       messages:[
+        {role:'system',content:prompt},
+        {role:'user',content:`请补全“${name.trim()}”的公开资料草稿。`}
+       ]
+      })
+     })
+     const payload:any=await response.json().catch(()=>({}))
+     if(!response.ok) throw new Error(payload?.error?.message||`DeepSeek 请求失败（${response.status}）`)
+     const content=payload?.choices?.[0]?.message?.content
+     if(!content) throw new Error('DeepSeek 未返回资料结果')
+     res.end(JSON.stringify({data:JSON.parse(content)}))
+    }catch(error){
+     res.statusCode=400
+     res.end(JSON.stringify({error:error instanceof Error?error.message:'AI 资料补全失败'}))
+    }
+   })
    server.middlewares.use('/api/ai/extract',async(req,res)=>{
     res.setHeader('Content-Type','application/json; charset=utf-8')
     if(req.method!=='POST'){

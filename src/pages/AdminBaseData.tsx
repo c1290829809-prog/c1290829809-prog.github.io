@@ -1,8 +1,9 @@
 import {FormEvent,useEffect,useState} from 'react'
-import {Edit3,ExternalLink,Image,Plus,Search,Trash2,X} from 'lucide-react'
+import {Edit3,ExternalLink,Image,Plus,Search,Sparkles,Trash2,X} from 'lucide-react'
 import {Link,useNavigate,useParams,useSearchParams} from 'react-router-dom'
 import {AdminShell} from './Admin'
 import {recalculateBasicCounts,useAdminStore,useBasicDataStore,type AdminPlace,type ManagedCity,type ManagedIdol,type ManagedWork,type WorkType} from '../stores'
+import {generateIdolProfile,type IdolProfileDraft} from '../services/aiIdolProfile'
 
 const control='min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-100'
 const roles=['演员','歌手','偶像','主持人','导演','作家','音乐人']
@@ -11,6 +12,7 @@ const now=()=>new Date().toISOString()
 const id=()=>`${Date.now()}-${Math.random().toString(36).slice(2,7)}`
 const toggle=(values:string[],value:string)=>values.includes(value)?values.filter(x=>x!==value):[...values,value]
 function Field({label,children}:{label:string;children:React.ReactNode}){return <label className="block text-sm font-semibold text-slate-700"><span className="mb-2 block">{label}</span>{children}</label>}
+function DraftItem({label,value}:{label:string;value:string}){return <div className="rounded-xl bg-white/80 p-4"><p className="text-xs font-semibold text-amber-700">{label}</p><p className="mt-1 whitespace-pre-line leading-6 text-slate-800">{value||'未能可靠识别，请手动填写'}</p></div>}
 function Checks({items,value,onChange}:{items:{id:string;name:string}[];value:string[];onChange:(next:string[])=>void}){return <div className="grid grid-cols-3 gap-2">{items.map(item=><label key={item.id} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-3 text-sm ${value.includes(item.id)?'border-red-400 bg-red-50 text-red-700':'border-slate-200'}`}><input type="checkbox" checked={value.includes(item.id)} onChange={()=>onChange(toggle(value,item.id))}/>{item.name}</label>)}</div>}
 function Actions({edit,remove}:{edit:string;remove:()=>void}){return <div className="flex justify-end"><Link to={edit} className="flex h-11 w-11 items-center justify-center text-slate-500 hover:text-blue-600"><Edit3 size={18}/></Link><button onClick={remove} className="flex h-11 w-11 items-center justify-center text-slate-500 hover:text-red-600"><Trash2 size={18}/></button></div>}
 function ImageCell({url,name}:{url:string;name:string}){return url?<img src={url} alt={name} className="h-12 w-12 rounded-xl object-cover"/>:<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400"><Image size={20}/></div>}
@@ -20,9 +22,70 @@ export function AdminIdolFormPage(){
  const existingCustom=(edit?.roles||[]).filter(role=>!roles.includes(role))
  const existingCityNames=edit?.cityNames?.length?edit.cityNames:(edit?.cities||[]).map(cityId=>store.cities.find(city=>city.id===cityId)?.name).filter(Boolean) as string[]
  const[form,setForm]=useState(()=>({name:edit?.name||'',avatar:edit?.avatar||'',roles:(edit?.roles||[]).filter(role=>roles.includes(role)),customRole:existingCustom.join('，'),useCustom:existingCustom.length>0,bio:edit?.bio||'',cityText:existingCityNames.join('，'),fanName:edit?.fanName||''}))
+ const[aiLoading,setAiLoading]=useState(false),[aiDraft,setAiDraft]=useState<IdolProfileDraft|null>(null),[aiError,setAiError]=useState('')
  const split=(value:string)=>value.split(/[,，]/).map(item=>item.trim()).filter(Boolean)
+ const generate=async()=>{
+  if(!form.name.trim()){setAiError('请先填写爱豆名称');return}
+  setAiLoading(true);setAiError('');setAiDraft(null)
+  try{
+   setAiDraft(await generateIdolProfile(form.name,{
+    roles:[...form.roles,...(form.useCustom?split(form.customRole):[])],
+    bio:form.bio,
+    cityNames:split(form.cityText),
+    fanName:form.fanName,
+    availableCities:store.cities.map(city=>city.name)
+   }))
+  }catch(error){setAiError(error instanceof Error?error.message:'AI 资料补全失败，请稍后重试')}
+  finally{setAiLoading(false)}
+ }
+ const applyDraft=()=>{
+  if(!aiDraft)return
+  const cityNames=[...new Set([...split(form.cityText),...aiDraft.cityNames])]
+  const nextRoles=[...new Set([...form.roles,...aiDraft.roles])]
+  const nextCustom=[...new Set([...split(form.customRole),...aiDraft.customRoles])]
+  setForm({
+   ...form,
+   roles:nextRoles,
+   customRole:nextCustom.join('，'),
+   useCustom:nextCustom.length>0,
+   bio:form.bio.trim()?form.bio:aiDraft.bio,
+   cityText:cityNames.join('，'),
+   fanName:form.fanName.trim()?form.fanName:aiDraft.fanName
+  })
+  setAiDraft(null)
+ }
  const submit=(e:FormEvent)=>{e.preventDefault();const cityNames=[...new Set(split(form.cityText))],cityIds=cityNames.map(name=>store.cities.find(city=>city.name.toLowerCase()===name.toLowerCase())?.id).filter(Boolean) as string[],customRoles=form.useCustom?split(form.customRole):[],value:ManagedIdol={id:edit?.id||`idol-${id()}`,name:form.name.trim(),avatar:form.avatar.trim(),roles:[...new Set([...form.roles,...customRoles])],bio:form.bio.trim(),cities:cityIds,cityNames,fanName:form.fanName.trim()||undefined,placeCount:edit?.placeCount||0,createdAt:edit?.createdAt||now()};edit?store.updateIdol(edit.id,value):store.addIdol(value);navigate('/admin/idol/list')}
- return <AdminShell title={edit?'编辑爱豆':'录入爱豆'} subtitle="维护地点可关联的爱豆基础资料"><form onSubmit={submit} className="max-w-4xl rounded-2xl bg-white p-8 shadow-sm"><div className="grid grid-cols-2 gap-6"><Field label="爱豆名称 *"><input required className={control} value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></Field><Field label="头像 URL（选填）"><input className={control} value={form.avatar} onChange={e=>setForm({...form,avatar:e.target.value})}/></Field><div className="col-span-2"><Field label="身份标签"><div className="flex flex-wrap gap-2">{roles.map(role=><label key={role} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 px-3"><input type="checkbox" checked={form.roles.includes(role)} onChange={()=>setForm({...form,roles:toggle(form.roles,role)})}/>{role}</label>)}<label className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 px-3"><input type="checkbox" checked={form.useCustom} onChange={()=>setForm({...form,useCustom:!form.useCustom})}/>其他</label></div>{form.useCustom&&<input className={`${control} mt-3`} value={form.customRole} onChange={e=>setForm({...form,customRole:e.target.value})} placeholder="自己填写身份，多个用逗号分隔，例如：舞者、制作人"/>}</Field></div><div className="col-span-2"><Field label="简介"><textarea rows={4} className={`${control} py-3`} value={form.bio} onChange={e=>setForm({...form,bio:e.target.value})}/></Field></div><div className="col-span-2"><Field label="关联城市"><input list="city-suggestions" className={control} value={form.cityText} onChange={e=>setForm({...form,cityText:e.target.value})} placeholder="输入或选择城市，多个用逗号分隔，例如：深圳、首尔、东京"/><datalist id="city-suggestions">{store.cities.map(city=><option key={city.id} value={city.name}/>)}</datalist><p className="mt-2 font-normal text-slate-400">会自动识别已有城市；也可以直接填写新城市，不限制数量。</p></Field></div><Field label="粉丝昵称（选填）"><input className={control} value={form.fanName} onChange={e=>setForm({...form,fanName:e.target.value})}/></Field></div><Submit cancel="/admin/idol/list"/></form></AdminShell>
+ return <AdminShell title={edit?'编辑爱豆':'录入爱豆'} subtitle="维护地点可关联的爱豆基础资料">
+  <form onSubmit={submit} className="max-w-4xl rounded-2xl bg-white p-8 shadow-sm">
+   <div className="grid grid-cols-2 gap-6">
+    <Field label="爱豆名称 *"><input required className={control} value={form.name} onChange={e=>{setForm({...form,name:e.target.value});setAiDraft(null);setAiError('')}}/></Field>
+    <Field label="头像 URL（选填）"><input className={control} value={form.avatar} onChange={e=>setForm({...form,avatar:e.target.value})}/></Field>
+   </div>
+   <section className="mt-6 rounded-2xl bg-slate-950 p-6 text-white">
+    <div className="flex items-center justify-between gap-6">
+     <div className="flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-orange-500"><Sparkles size={20}/></span><div><h2 className="font-black">AI 补全爱豆资料</h2><p className="mt-1 text-sm text-white/55">根据名称生成身份、简介、粉丝昵称和关联城市建议</p></div></div>
+     <button type="button" onClick={generate} disabled={aiLoading||!form.name.trim()} className="min-h-12 rounded-xl bg-orange-500 px-6 font-bold disabled:cursor-not-allowed disabled:opacity-45">{aiLoading?'生成中...':'AI 自动补全'}</button>
+    </div>
+    <p className="mt-4 text-xs leading-5 text-white/45">头像 URL 不会由 AI 编造；所有人物资料都需在保存前对照官方主页或可靠公开资料核实。</p>
+    {aiError&&<p className="mt-3 rounded-xl bg-red-500/15 px-4 py-3 text-sm text-red-200">{aiError}</p>}
+   </section>
+   {aiDraft&&<section className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-6">
+    <div className="flex items-start justify-between gap-6">
+     <div className="min-w-0 flex-1"><div className="flex items-center gap-3"><h3 className="font-black text-amber-950">AI 资料草稿</h3><span className="rounded-full bg-amber-200 px-3 py-1 text-xs font-bold text-amber-900">可信度：{{high:'高',medium:'中',low:'低'}[aiDraft.confidence]}</span></div><p className="mt-3 text-xs leading-5 text-amber-800">{aiDraft.notice}</p>
+      <div className="mt-4 grid grid-cols-2 gap-4 text-sm"><DraftItem label="身份标签" value={[...aiDraft.roles,...aiDraft.customRoles].join('、')}/><DraftItem label="粉丝昵称" value={aiDraft.fanName}/><DraftItem label="关联城市建议" value={aiDraft.cityNames.join('、')}/><div className="col-span-2"><DraftItem label="简介" value={aiDraft.bio}/></div></div>
+     </div>
+     <button type="button" onClick={applyDraft} className="min-h-12 shrink-0 rounded-xl bg-slate-950 px-6 font-bold text-white">应用建议</button>
+    </div>
+   </section>}
+   <div className="mt-6 grid grid-cols-2 gap-6">
+    <div className="col-span-2"><Field label="身份标签"><div className="flex flex-wrap gap-2">{roles.map(role=><label key={role} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 px-3"><input type="checkbox" checked={form.roles.includes(role)} onChange={()=>setForm({...form,roles:toggle(form.roles,role)})}/>{role}</label>)}<label className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 px-3"><input type="checkbox" checked={form.useCustom} onChange={()=>setForm({...form,useCustom:!form.useCustom})}/>其他</label></div>{form.useCustom&&<input className={`${control} mt-3`} value={form.customRole} onChange={e=>setForm({...form,customRole:e.target.value})} placeholder="自己填写身份，多个用逗号分隔，例如：舞者、制作人"/>}</Field></div>
+    <div className="col-span-2"><Field label="简介"><textarea rows={4} className={`${control} py-3`} value={form.bio} onChange={e=>setForm({...form,bio:e.target.value})}/></Field></div>
+    <div className="col-span-2"><Field label="关联城市"><input list="city-suggestions" className={control} value={form.cityText} onChange={e=>setForm({...form,cityText:e.target.value})} placeholder="输入或选择城市，多个用逗号分隔，例如：深圳、首尔、东京"/><datalist id="city-suggestions">{store.cities.map(city=><option key={city.id} value={city.name}/>)}</datalist><p className="mt-2 font-normal text-slate-400">会自动识别已有城市；也可以直接填写新城市，不限制数量。</p></Field></div>
+    <Field label="粉丝昵称（选填）"><input className={control} value={form.fanName} onChange={e=>setForm({...form,fanName:e.target.value})}/></Field>
+   </div>
+   <Submit cancel="/admin/idol/list"/>
+  </form>
+ </AdminShell>
 }
 export function AdminIdolListPage(){
  const store=useBasicDataStore(),places=useAdminStore(s=>s.records),[query,setQuery]=useState(''),[selected,setSelected]=useState<{id:string;name:string}|null>(null)
