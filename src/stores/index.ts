@@ -6,10 +6,11 @@ interface RouteState{placeIds:string[];add:(id:string)=>void;remove:(id:string)=
 export const useRouteStore=create<RouteState>()(persist((set)=>({placeIds:[],add:(id)=>{trackEvent({type:'route_add',placeId:id});set(s=>({placeIds:s.placeIds.includes(id)?s.placeIds:[...s.placeIds,id]}))},remove:(id)=>set(s=>({placeIds:s.placeIds.filter(x=>x!==id)})),reorder:(from,to)=>set(s=>{const n=[...s.placeIds];const [m]=n.splice(from,1);n.splice(to,0,m);return{placeIds:n}}),clear:()=>set({placeIds:[]})}),{name:'xunji-route'}))
 interface FavoriteState{placeIds:string[];toggle:(id:string)=>void;has:(id:string)=>boolean}
 export const useFavoriteStore=create<FavoriteState>()(persist((set,get)=>({placeIds:[],toggle:(id)=>{trackEvent({type:'favorite_click',placeId:id});set(s=>({placeIds:s.placeIds.includes(id)?s.placeIds.filter(x=>x!==id):[...s.placeIds,id]}))},has:(id)=>get().placeIds.includes(id)}),{name:'xunji-favorites'}))
-interface FollowingState{idolIds:string[];follow:(id:string)=>void;has:(id:string)=>boolean}
+interface FollowingState{idolIds:string[];follow:(id:string)=>void;unfollow:(id:string)=>void;has:(id:string)=>boolean}
 export const useFollowingStore=create<FollowingState>()(persist((set,get)=>({
  idolIds:[],
  follow:id=>set(state=>({idolIds:state.idolIds.includes(id)?state.idolIds:[...state.idolIds,id]})),
+ unfollow:id=>set(state=>({idolIds:state.idolIds.filter(idolId=>idolId!==id)})),
  has:id=>get().idolIds.includes(id)
 }),{name:'xunji-followed-idols'}))
 export interface AdminPlace{
@@ -18,8 +19,8 @@ export interface AdminPlace{
  relationType:string;relationDesc:string;evidence:string;credibility:Credibility|null;status:'pending'|'published'|'rejected';createdAt:string;reviewNote?:string;reviewOpinion?:string;reviewedAt?:string
  transportGuide?:string;coreSpots?:string;tips?:string
 }
-interface AdminState{records:AdminPlace[];addRecord:(record:AdminPlace)=>void;updateRecord:(id:string,changes:Partial<AdminPlace>)=>void;reviewRecord:(id:string,status:'published'|'rejected',credibility:Credibility|null,reviewNote:string)=>void;removeRecord:(id:string)=>void}
-export const useAdminStore=create<AdminState>()(persist((set)=>({records:[],addRecord:(record)=>set(s=>({records:[record,...s.records]})),updateRecord:(id,changes)=>set(s=>({records:s.records.map(x=>x.id===id?{...x,...changes}:x)})),reviewRecord:(id,status,credibility,reviewNote)=>set(s=>({records:s.records.map(place=>{if(place.id!==id)return place;const updated={...place};updated.status=status;updated.credibility=status==='published'?credibility:place.credibility;updated.reviewNote=reviewNote;updated.reviewOpinion=reviewNote;updated.reviewedAt=new Date().toISOString();return updated})})),removeRecord:(id)=>set(s=>({records:s.records.filter(x=>x.id!==id)}))}),{
+interface AdminState{records:AdminPlace[];addRecord:(record:AdminPlace)=>void;updateRecord:(id:string,changes:Partial<AdminPlace>)=>void;reviewRecord:(id:string,status:'published'|'rejected',credibility:Credibility|null,reviewNote:string)=>void;removeRecord:(id:string)=>void;hydrateRecords:(records:AdminPlace[])=>void}
+export const useAdminStore=create<AdminState>()(persist((set)=>({records:[],addRecord:(record)=>set(s=>({records:[record,...s.records]})),updateRecord:(id,changes)=>set(s=>({records:s.records.map(x=>x.id===id?{...x,...changes}:x)})),reviewRecord:(id,status,credibility,reviewNote)=>set(s=>({records:s.records.map(place=>{if(place.id!==id)return place;const updated={...place};updated.status=status;updated.credibility=status==='published'?credibility:place.credibility;updated.reviewNote=reviewNote;updated.reviewOpinion=reviewNote;updated.reviewedAt=new Date().toISOString();return updated})})),removeRecord:(id)=>set(s=>({records:s.records.filter(x=>x.id!==id)})),hydrateRecords:records=>set({records})}),{
  name:'xunji-admin-places',version:4,
  migrate:(persisted:any)=>({records:(persisted?.records||[]).filter((x:any)=>!x?.place)})
 }))
@@ -27,15 +28,20 @@ export const useAdminStore=create<AdminState>()(persist((set)=>({records:[],addR
 export interface ManagedIdol{id:string;name:string;avatar:string;roles:string[];bio:string;cities:string[];cityNames?:string[];fanName?:string;placeCount:number;createdAt:string}
 export type WorkType='movie'|'tv'|'variety'|'book'|'music'|'other'
 export interface ManagedWork{id:string;name:string;type:WorkType;year?:number;region?:string;cover:string;quote:string;relatedIdolIds:string[];relatedIdolNames?:string[];relatedCities:string[];cityNames?:string[];placeCount:number;createdAt:string}
-export interface ManagedCity{id:string;name:string;region:string;cover:string;story:string;iconUrl:string;placeCount:number;routeCount:number;createdAt:string}
+export interface ManagedCity{id:string;name:string;region:string;cover:string;story:string;iconUrl:string;placeCount:number;routeCount:number;createdAt:string;autoCreated?:boolean}
 interface BasicDataState{
  idols:ManagedIdol[];works:ManagedWork[];cities:ManagedCity[];
  addIdol:(value:ManagedIdol)=>void;updateIdol:(id:string,value:Partial<ManagedIdol>)=>void;removeIdol:(id:string)=>void;
  addWork:(value:ManagedWork)=>void;updateWork:(id:string,value:Partial<ManagedWork>)=>void;removeWork:(id:string)=>void;
- addCity:(value:ManagedCity)=>void;updateCity:(id:string,value:Partial<ManagedCity>)=>void;removeCity:(id:string)=>void
+ addCity:(value:ManagedCity)=>void;updateCity:(id:string,value:Partial<ManagedCity>)=>void;removeCity:(id:string)=>void;hydrate:(data:{idols:ManagedIdol[];works:ManagedWork[];cities:ManagedCity[]})=>void
 }
 const createdAt=new Date().toISOString()
-const seedCities:ManagedCity[]=[{id:'city-shenzhen',name:'深圳',region:'广东省',cover:'',story:'山海连城、开放年轻的湾区城市。',iconUrl:'',placeCount:0,routeCount:0,createdAt}]
+const seedCities:ManagedCity[]=[
+ {id:'city-shenzhen',name:'深圳',region:'广东省',cover:'',story:'山海连城、开放年轻的湾区城市。',iconUrl:'',placeCount:0,routeCount:0,createdAt,autoCreated:true},
+ {id:'city-shanghai',name:'上海',region:'上海市',cover:'',story:'从梧桐街区到浦江两岸，作品与城市生活在这里交汇。',iconUrl:'',placeCount:0,routeCount:0,createdAt,autoCreated:true},
+ {id:'city-chongqing',name:'重庆',region:'重庆市',cover:'',story:'山城坡道、轻轨与江岸夜景构成层叠的城市镜头。',iconUrl:'',placeCount:0,routeCount:0,createdAt,autoCreated:true},
+ {id:'city-beijing',name:'北京',region:'北京市',cover:'',story:'胡同、剧场、地标和现代街区共同保存着公开足迹。',iconUrl:'',placeCount:0,routeCount:0,createdAt,autoCreated:true}
+]
 const seedIdols:ManagedIdol[]=[
  {id:'zhou-shen',name:'周深',avatar:'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300',roles:['歌手'],bio:'中国内地流行乐男歌手。',cities:['city-shenzhen'],fanName:'生米',placeCount:0,createdAt},
  {id:'wang-yibo',name:'王一博',avatar:'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=300',roles:['演员','歌手'],bio:'演员、歌手。',cities:['city-shenzhen'],placeCount:0,createdAt},
@@ -71,15 +77,18 @@ function normalizeWorks(value:unknown):ManagedWork[]{
 }
 function normalizeCities(value:unknown):ManagedCity[]{
  if(!Array.isArray(value))return seedCities
- return value.filter((item):item is Record<string,any>=>Boolean(item)&&typeof item==='object'&&typeof item.id==='string'&&typeof item.name==='string').map(item=>({
-  id:item.id,name:item.name,region:typeof item.region==='string'?item.region:'',cover:typeof item.cover==='string'?item.cover:'',story:typeof item.story==='string'?item.story:'',iconUrl:typeof item.iconUrl==='string'?item.iconUrl:'',placeCount:Number.isFinite(item.placeCount)?item.placeCount:0,routeCount:Number.isFinite(item.routeCount)?item.routeCount:0,createdAt:typeof item.createdAt==='string'?item.createdAt:createdAt
+ const defaultsById=new Map(seedCities.map(city=>[city.id,city]))
+ const normalized=value.filter((item):item is Record<string,any>=>Boolean(item)&&typeof item==='object'&&typeof item.id==='string'&&typeof item.name==='string').map(item=>({
+  id:item.id,name:item.name,region:typeof item.region==='string'?item.region:'',cover:typeof item.cover==='string'?item.cover:'',story:typeof item.story==='string'?item.story:'',iconUrl:typeof item.iconUrl==='string'?item.iconUrl:'',placeCount:Number.isFinite(item.placeCount)?item.placeCount:0,routeCount:Number.isFinite(item.routeCount)?item.routeCount:0,createdAt:typeof item.createdAt==='string'?item.createdAt:createdAt,autoCreated:typeof item.autoCreated==='boolean'?item.autoCreated:defaultsById.has(item.id)
  }))
+ const names=new Set(normalized.map(city=>city.name.toLocaleLowerCase()))
+ return[...normalized,...seedCities.filter(city=>!names.has(city.name.toLocaleLowerCase()))]
 }
 export const useBasicDataStore=create<BasicDataState>()((set)=>({
  idols:normalizeIdols(readBasicData('xunji_idols',seedIdols)),works:normalizeWorks(readBasicData('xunji_works',seedWorks)),cities:normalizeCities(readBasicData('xunji_cities',seedCities)),
  addIdol:value=>set(s=>({idols:[value,...s.idols]})),updateIdol:(id,value)=>set(s=>({idols:s.idols.map(x=>x.id===id?{...x,...value}:x)})),removeIdol:id=>set(s=>({idols:s.idols.filter(x=>x.id!==id),works:s.works.map(w=>({...w,relatedIdolIds:w.relatedIdolIds.filter(x=>x!==id)}))})),
  addWork:value=>set(s=>({works:[value,...s.works]})),updateWork:(id,value)=>set(s=>({works:s.works.map(x=>x.id===id?{...x,...value}:x)})),removeWork:id=>set(s=>({works:s.works.filter(x=>x.id!==id)})),
- addCity:value=>set(s=>({cities:[value,...s.cities]})),updateCity:(id,value)=>set(s=>({cities:s.cities.map(x=>x.id===id?{...x,...value}:x)})),removeCity:id=>set(s=>({cities:s.cities.filter(x=>x.id!==id),idols:s.idols.map(i=>({...i,cities:i.cities.filter(x=>x!==id)})),works:s.works.map(w=>({...w,relatedCities:w.relatedCities.filter(x=>x!==id)}))}))
+ addCity:value=>set(s=>({cities:[value,...s.cities]})),updateCity:(id,value)=>set(s=>({cities:s.cities.map(x=>x.id===id?{...x,...value}:x)})),removeCity:id=>set(s=>({cities:s.cities.filter(x=>x.id!==id),idols:s.idols.map(i=>({...i,cities:i.cities.filter(x=>x!==id)})),works:s.works.map(w=>({...w,relatedCities:w.relatedCities.filter(x=>x!==id)}))})),hydrate:data=>set(data)
 }))
 if(typeof window!=='undefined'){
  const save=(state:BasicDataState)=>{localStorage.setItem('xunji_idols',JSON.stringify(state.idols));localStorage.setItem('xunji_works',JSON.stringify(state.works));localStorage.setItem('xunji_cities',JSON.stringify(state.cities))}
