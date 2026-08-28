@@ -73,7 +73,7 @@ export function AdminIdolFormPage(){
   })
   setAiDraft(null)
  }
- const submit=(e:FormEvent)=>{
+ const submit=async(e:FormEvent)=>{
   e.preventDefault()
   const idolId=edit?.id||`idol-${id()}`
   const idolName=form.name.trim()
@@ -93,18 +93,18 @@ export function AdminIdolFormPage(){
    placeCount:places.filter(place=>selectedPlaceIds.includes(place.id)&&place.status==='published').length,
    createdAt:edit?.createdAt||now()
   }
-  edit?store.updateIdol(edit.id,value):store.addIdol(value)
-  places.forEach(place=>{
+  if(!await(edit?store.updateIdol(edit.id,value):store.addIdol(value)))return
+  await Promise.all(places.map(async place=>{
    const names=place.relatedIdolNames||place.relatedIdols
    const wasRelated=(place.relatedIdolIds||[]).includes(idolId)||(edit?names.includes(edit.name):false)
    const selected=selectedPlaceIds.includes(place.id)
-   if(!selected&&!wasRelated)return
+   if(!selected&&!wasRelated)return true
    const cleanedIds=(place.relatedIdolIds||[]).filter(currentId=>currentId!==idolId)
    const cleanedNames=names.filter(name=>name!==idolName&&name!==edit?.name)
    const relatedIdolIds=selected?[...new Set([...cleanedIds,idolId])]:cleanedIds
    const relatedIdolNames=selected?[...new Set([...cleanedNames,idolName])]:cleanedNames
-   updatePlace(place.id,{relatedIdolIds,relatedIdolNames,relatedIdols:relatedIdolNames})
-  })
+   return updatePlace(place.id,{relatedIdolIds,relatedIdolNames,relatedIdols:relatedIdolNames})
+  }))
   navigate('/admin/idol/list')
  }
  const normalizedQuery=placeQuery.trim().toLowerCase()
@@ -203,7 +203,7 @@ export function AdminWorkFormPage(){
   })
   setAiDraft(null)
  }
- const submit=(e:FormEvent)=>{
+ const submit=async(e:FormEvent)=>{
   e.preventDefault()
   const workId=edit?.id||`work-${id()}`
   const workName=form.name.trim()
@@ -211,13 +211,14 @@ export function AdminWorkFormPage(){
   const cityNames=[...new Set([...split(form.cityText),...placeCities])]
   const relatedCities=cityNames.map(name=>store.cities.find(city=>city.name.toLowerCase()===name.toLowerCase())?.id).filter(Boolean) as string[]
   const relatedIdolNames=[...new Set(idolNames)]
-  const relatedIdolIds=relatedIdolNames.map(name=>{
+  const relatedIdolIds:string[]=[]
+  for(const name of relatedIdolNames){
    const existing=store.idols.find(idol=>idol.name.toLowerCase()===name.toLowerCase())
-   if(existing)return existing.id
+   if(existing){relatedIdolIds.push(existing.id);continue}
    const idolId=`idol-${id()}`
-   store.addIdol({id:idolId,name,avatar:'',roles:[],bio:'',cities:[],cityNames:[],fanName:'',placeCount:0,createdAt:now()})
-   return idolId
-  })
+   if(!await store.addIdol({id:idolId,name,avatar:'',roles:[],bio:'',cities:[],cityNames:[],fanName:'',placeCount:0,createdAt:now()}))return
+   relatedIdolIds.push(idolId)
+  }
   const value:ManagedWork={
    id:workId,
    name:workName,
@@ -233,11 +234,11 @@ export function AdminWorkFormPage(){
    placeCount:places.filter(place=>selectedPlaceIds.includes(place.id)&&place.status==='published').length,
    createdAt:edit?.createdAt||now()
   }
-  edit?store.updateWork(edit.id,value):store.addWork(value)
-  places.forEach(place=>{
+  if(!await(edit?store.updateWork(edit.id,value):store.addWork(value)))return
+  await Promise.all(places.map(async place=>{
    const wasRelated=placeHasWork(place,workId,edit?.name||workName)
    const selected=selectedPlaceIds.includes(place.id)
-   if(!selected&&!wasRelated)return
+   if(!selected&&!wasRelated)return true
    const oldNames=new Set([workName,edit?.name].filter(Boolean) as string[])
    const relatedMovies=place.relatedMovies.filter(name=>!oldNames.has(name))
    const relatedTV=place.relatedTV.filter(name=>!oldNames.has(name))
@@ -250,8 +251,8 @@ export function AdminWorkFormPage(){
     else relatedOtherWorks.push(workName)
    }
    const cleanIds=(place.relatedWorkIds||[]).filter(currentId=>currentId!==workId)
-   updatePlace(place.id,{relatedMovies:[...new Set(relatedMovies)],relatedTV:[...new Set(relatedTV)],relatedVariety:[...new Set(relatedVariety)],relatedOtherWorks:[...new Set(relatedOtherWorks)],relatedWorkIds:selected?[...cleanIds,workId]:cleanIds})
-  })
+   return updatePlace(place.id,{relatedMovies:[...new Set(relatedMovies)],relatedTV:[...new Set(relatedTV)],relatedVariety:[...new Set(relatedVariety)],relatedOtherWorks:[...new Set(relatedOtherWorks)],relatedWorkIds:selected?[...cleanIds,workId]:cleanIds})
+  }))
   navigate('/admin/work/list')
  }
  const normalizedQuery=placeQuery.trim().toLowerCase()
@@ -284,7 +285,7 @@ export function AdminWorkListPage(){
 export function AdminCityFormPage(){
  const store=useBasicDataStore(),[params]=useSearchParams(),edit=store.cities.find(x=>x.id===params.get('edit')),navigate=useNavigate()
  const[form,setForm]=useState(()=>({name:edit?.name||'',region:edit?.region||'',cover:edit?.cover||'',story:edit?.story||'',iconUrl:edit?.iconUrl||''}))
- const submit=(e:FormEvent)=>{e.preventDefault();const value:ManagedCity={id:edit?.id||`city-${id()}`,...form,name:form.name.trim(),region:form.region.trim(),cover:form.cover.trim(),story:form.story.trim(),iconUrl:form.iconUrl.trim(),placeCount:edit?.placeCount||0,routeCount:edit?.routeCount||0,autoCreated:false,createdAt:edit?.createdAt||now()};edit?store.updateCity(edit.id,value):store.addCity(value);navigate('/admin/city/list')}
+ const submit=async(e:FormEvent)=>{e.preventDefault();const value:ManagedCity={id:edit?.id||`city-${id()}`,...form,name:form.name.trim(),region:form.region.trim(),cover:form.cover.trim(),story:form.story.trim(),iconUrl:form.iconUrl.trim(),placeCount:edit?.placeCount||0,routeCount:edit?.routeCount||0,autoCreated:false,createdAt:edit?.createdAt||now()};if(await(edit?store.updateCity(edit.id,value):store.addCity(value)))navigate('/admin/city/list')}
  return <AdminShell title={edit?'编辑城市':'录入城市'} subtitle="维护城市资料与首页展示素材"><form onSubmit={submit} className="max-w-4xl rounded-2xl bg-white p-8 shadow-sm"><div className="grid grid-cols-2 gap-6"><Field label="城市名称 *"><input required className={control} value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></Field><Field label="所属省份 / 国家 *"><input required className={control} value={form.region} onChange={e=>setForm({...form,region:e.target.value})}/></Field><div className="col-span-2"><Field label="城市封面图 URL（选填）"><input className={control} value={form.cover} onChange={e=>setForm({...form,cover:e.target.value})}/></Field></div><div className="col-span-2"><Field label="城市故事 / 简介"><textarea rows={5} className={`${control} py-3`} value={form.story} onChange={e=>setForm({...form,story:e.target.value})}/></Field></div><div className="col-span-2"><Field label="地标线描图标 URL（选填）"><input className={control} value={form.iconUrl} onChange={e=>setForm({...form,iconUrl:e.target.value})}/></Field></div></div><Submit cancel="/admin/city/list"/></form></AdminShell>
 }
 export function AdminCityListPage(){
@@ -298,7 +299,7 @@ function CountButton({value,onClick}:{value:number;onClick:()=>void}){return val
 function RelationPlacesModal({kind,entity,places,onClose}:{kind:'idol'|'work'|'city';entity:{id:string;name:string};places:AdminPlace[];onClose:()=>void}){
  const update=useAdminStore(s=>s.updateRecord)
  const rows=places.filter(place=>kind==='idol'?((place.relatedIdolIds||[]).includes(entity.id)||(place.relatedIdolNames||place.relatedIdols).includes(entity.name)):kind==='work'?placeHasWork(place,entity.id,entity.name):place.city===entity.name)
- const removeRelation=(place:AdminPlace)=>{if(!confirm(`确定移除该地点与 ${entity.name} 的关联？地点本身不会被删除`))return;if(kind==='idol'){update(place.id,{relatedIdols:place.relatedIdols.filter(name=>name!==entity.name),relatedIdolNames:(place.relatedIdolNames||place.relatedIdols).filter(name=>name!==entity.name),relatedIdolIds:(place.relatedIdolIds||[]).filter(id=>id!==entity.id)})}else if(kind==='work'){update(place.id,{relatedMovies:place.relatedMovies.filter(name=>name!==entity.name),relatedTV:place.relatedTV.filter(name=>name!==entity.name),relatedVariety:place.relatedVariety.filter(name=>name!==entity.name),relatedOtherWorks:(place.relatedOtherWorks||[]).filter(name=>name!==entity.name),relatedWorkIds:(place.relatedWorkIds||[]).filter(id=>id!==entity.id)})}setTimeout(()=>recalculateBasicCounts(useAdminStore.getState().records),0)}
+ const removeRelation=async(place:AdminPlace)=>{if(!confirm(`确定移除该地点与 ${entity.name} 的关联？地点本身不会被删除`))return;let saved=true;if(kind==='idol'){saved=await update(place.id,{relatedIdols:place.relatedIdols.filter(name=>name!==entity.name),relatedIdolNames:(place.relatedIdolNames||place.relatedIdols).filter(name=>name!==entity.name),relatedIdolIds:(place.relatedIdolIds||[]).filter(id=>id!==entity.id)})}else if(kind==='work'){saved=await update(place.id,{relatedMovies:place.relatedMovies.filter(name=>name!==entity.name),relatedTV:place.relatedTV.filter(name=>name!==entity.name),relatedVariety:place.relatedVariety.filter(name=>name!==entity.name),relatedOtherWorks:(place.relatedOtherWorks||[]).filter(name=>name!==entity.name),relatedWorkIds:(place.relatedWorkIds||[]).filter(id=>id!==entity.id)})}if(saved)recalculateBasicCounts(useAdminStore.getState().records)}
  const relationNames:Record<string,string>={same_style:'同款',filming:'节目取景',public_event:'公开活动',personal_share:'个人分享',other:'其他'}
  return <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/55" onMouseDown={event=>event.target===event.currentTarget&&onClose()}><aside className="h-full w-[820px] overflow-y-auto bg-white p-8 shadow-2xl"><div className="flex items-start justify-between"><div><p className="text-sm text-slate-400">关联地点详情</p><h2 className="mt-1 text-2xl font-black">{entity.name} 的关联地点（{rows.length}个）</h2></div><button onClick={onClose} className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100"><X/></button></div><div className="mt-7 overflow-x-auto rounded-xl border"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-slate-50 text-slate-500"><tr><th className="px-4 py-3">地点名称</th><th>城市</th><th>地址</th><th>关系类型</th><th>可信度</th><th>状态</th><th className="pr-4 text-right">操作</th></tr></thead><tbody>{rows.map(place=><tr key={place.id} className="border-t"><td className="px-4 py-4 font-bold">{place.name}</td><td>{place.city}</td><td className="max-w-52 truncate pr-4">{place.address}</td><td>{relationNames[place.relationType]||place.relationType}</td><td>{place.credibility||'待审核'}</td><td>{place.status==='published'?'已发布':place.status==='rejected'?'已驳回':'待审核'}</td><td className="pr-4"><div className="flex justify-end gap-2"><Link to={`/place/${place.id}`} target="_blank" className="flex min-h-10 items-center gap-1 rounded-lg border px-3 text-xs"><ExternalLink size={14}/>查看</Link><Link to={`/admin/content?edit=${place.id}`} className="flex min-h-10 items-center gap-1 rounded-lg border px-3 text-xs"><Edit3 size={14}/>编辑</Link>{kind!=='city'&&<button onClick={()=>removeRelation(place)} className="min-h-10 rounded-lg border border-red-200 px-3 text-xs text-red-600">移除关联</button>}</div></td></tr>)}</tbody></table>{!rows.length&&<div className="py-16 text-center text-slate-400">暂无关联地点</div>}</div></aside></div>
 }

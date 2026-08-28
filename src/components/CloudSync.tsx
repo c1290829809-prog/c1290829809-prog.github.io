@@ -1,15 +1,14 @@
-import {useEffect,useRef} from 'react'
-import {cloudEnabled,readCloud,writeTable} from '../services/supabase'
-import {useAdminStore,useBasicDataStore} from '../stores'
-import type {AdminPlace,ManagedCity,ManagedIdol,ManagedWork} from '../stores'
+import {useEffect} from 'react'
+import {cloudEnabled,isCurrentUserAdmin,readCloud,readTable,supabase} from '../services/supabase'
+import {replaceEvents} from '../services/analytics'
+import {useAdminStore,useBasicDataStore,useFeedbackStore} from '../stores'
+import type {AdminPlace,Feedback,ManagedCity,ManagedIdol,ManagedWork} from '../stores'
 export function CloudSync(){
- const ready=useRef(false)
  useEffect(()=>{
-  if(!cloudEnabled)return
+  if(!cloudEnabled||!supabase)return
   let disposed=false
-  const push=()=>{if(!ready.current)return;const admin=useAdminStore.getState(),basic=useBasicDataStore.getState();void Promise.all([writeTable('places',admin.records),writeTable('idols',basic.idols),writeTable('works',basic.works),writeTable('cities',basic.cities)]).catch(()=>{})}
-  const boot=async()=>{try{const cloud=await readCloud();if(disposed)return;const places=cloud.places as AdminPlace[],idols=cloud.idols as ManagedIdol[],works=cloud.works as ManagedWork[],cities=cloud.cities as ManagedCity[];const admin=useAdminStore.getState(),basic=useBasicDataStore.getState();if(places.length)admin.hydrateRecords(places);else void writeTable('places',admin.records);if(idols.length||works.length||cities.length)basic.hydrate({idols:idols.length?idols:basic.idols,works:works.length?works:basic.works,cities:cities.length?cities:basic.cities});else void Promise.all([writeTable('idols',basic.idols),writeTable('works',basic.works),writeTable('cities',basic.cities)]);ready.current=true}catch{ready.current=true} }
-  void boot();const unsubAdmin=useAdminStore.subscribe(push),unsubBasic=useBasicDataStore.subscribe(push);return()=>{disposed=true;unsubAdmin();unsubBasic()}
+  const load=async()=>{try{const cloud=await readCloud();if(disposed)return;useAdminStore.getState().hydrateRecords(cloud.places as AdminPlace[]);useBasicDataStore.getState().hydrate({idols:cloud.idols as ManagedIdol[],works:cloud.works as ManagedWork[],cities:cloud.cities as ManagedCity[]});if(await isCurrentUserAdmin()){const[feedback,events]=await Promise.all([readTable<Feedback>('feedback'),readTable('events')]);if(disposed)return;useFeedbackStore.getState().hydrate(feedback);replaceEvents(events)}}catch(error){console.error('云端数据加载失败',error)}}
+  void load();const{data:{subscription}}=supabase.auth.onAuthStateChange(()=>{window.setTimeout(()=>{void load()},0)});return()=>{disposed=true;subscription.unsubscribe()}
  },[])
  return null
 }

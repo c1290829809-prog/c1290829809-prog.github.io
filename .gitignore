@@ -6,6 +6,7 @@ dist
 *.log
 *.tsbuildinfo
 backups/
+xunji-backup-*.json
 vite.config.js
 vite.config.d.ts
 .write_test.txt

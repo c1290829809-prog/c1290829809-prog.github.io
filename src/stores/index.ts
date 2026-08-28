@@ -2,6 +2,7 @@ import {create} from 'zustand'
 import {persist} from 'zustand/middleware'
 import type {Credibility} from '../types'
 import {trackEvent} from '../services/analytics'
+import {deleteRow,upsertRow} from '../services/supabase'
 interface RouteState{placeIds:string[];add:(id:string)=>void;remove:(id:string)=>void;reorder:(from:number,to:number)=>void;clear:()=>void}
 export const useRouteStore=create<RouteState>()(persist((set)=>({placeIds:[],add:(id)=>{trackEvent({type:'route_add',placeId:id});set(s=>({placeIds:s.placeIds.includes(id)?s.placeIds:[...s.placeIds,id]}))},remove:(id)=>set(s=>({placeIds:s.placeIds.filter(x=>x!==id)})),reorder:(from,to)=>set(s=>{const n=[...s.placeIds];const [m]=n.splice(from,1);n.splice(to,0,m);return{placeIds:n}}),clear:()=>set({placeIds:[]})}),{name:'xunji-route'}))
 interface FavoriteState{placeIds:string[];toggle:(id:string)=>void;has:(id:string)=>boolean}
@@ -19,8 +20,9 @@ export interface AdminPlace{
  relationType:string;relationDesc:string;evidence:string;credibility:Credibility|null;status:'pending'|'published'|'rejected';createdAt:string;reviewNote?:string;reviewOpinion?:string;reviewedAt?:string
  transportGuide?:string;coreSpots?:string;tips?:string
 }
-interface AdminState{records:AdminPlace[];addRecord:(record:AdminPlace)=>void;updateRecord:(id:string,changes:Partial<AdminPlace>)=>void;reviewRecord:(id:string,status:'published'|'rejected',credibility:Credibility|null,reviewNote:string)=>void;removeRecord:(id:string)=>void;hydrateRecords:(records:AdminPlace[])=>void}
-export const useAdminStore=create<AdminState>()(persist((set)=>({records:[],addRecord:(record)=>set(s=>({records:[record,...s.records]})),updateRecord:(id,changes)=>set(s=>({records:s.records.map(x=>x.id===id?{...x,...changes}:x)})),reviewRecord:(id,status,credibility,reviewNote)=>set(s=>({records:s.records.map(place=>{if(place.id!==id)return place;const updated={...place};updated.status=status;updated.credibility=status==='published'?credibility:place.credibility;updated.reviewNote=reviewNote;updated.reviewOpinion=reviewNote;updated.reviewedAt=new Date().toISOString();return updated})})),removeRecord:(id)=>set(s=>({records:s.records.filter(x=>x.id!==id)})),hydrateRecords:records=>set({records})}),{
+const reportCloudError=(error:unknown)=>{const message=error instanceof Error?error.message:'云端操作失败';console.error(message,error);if(typeof window!=='undefined')window.alert(`${message}\n数据没有保存，请稍后重试。`)}
+interface AdminState{records:AdminPlace[];addRecord:(record:AdminPlace)=>Promise<boolean>;updateRecord:(id:string,changes:Partial<AdminPlace>)=>Promise<boolean>;reviewRecord:(id:string,status:'published'|'rejected',credibility:Credibility|null,reviewNote:string)=>Promise<boolean>;removeRecord:(id:string)=>Promise<boolean>;hydrateRecords:(records:AdminPlace[])=>void}
+export const useAdminStore=create<AdminState>()(persist((set,get)=>({records:[],addRecord:async(record)=>{try{await upsertRow('places',record);set(s=>({records:[record,...s.records.filter(x=>x.id!==record.id)]}));return true}catch(error){reportCloudError(error);return false}},updateRecord:async(id,changes)=>{const current=get().records.find(x=>x.id===id);if(!current)return false;const updated={...current,...changes};try{await upsertRow('places',updated);set(s=>({records:s.records.map(x=>x.id===id?updated:x)}));return true}catch(error){reportCloudError(error);return false}},reviewRecord:async(id,status,credibility,reviewNote)=>{const place=get().records.find(x=>x.id===id);if(!place)return false;const updated={...place,status,credibility:status==='published'?credibility:place.credibility,reviewNote,reviewOpinion:reviewNote,reviewedAt:new Date().toISOString()};try{await upsertRow('places',updated);set(s=>({records:s.records.map(x=>x.id===id?updated:x)}));return true}catch(error){reportCloudError(error);return false}},removeRecord:async(id)=>{try{await deleteRow('places',id);set(s=>({records:s.records.filter(x=>x.id!==id)}));return true}catch(error){reportCloudError(error);return false}},hydrateRecords:records=>set({records})}),{
  name:'xunji-admin-places',version:4,
  migrate:(persisted:any)=>({records:(persisted?.records||[]).filter((x:any)=>!x?.place)})
 }))
@@ -31,9 +33,9 @@ export interface ManagedWork{id:string;name:string;type:WorkType;year?:number;re
 export interface ManagedCity{id:string;name:string;region:string;cover:string;story:string;iconUrl:string;placeCount:number;routeCount:number;createdAt:string;autoCreated?:boolean}
 interface BasicDataState{
  idols:ManagedIdol[];works:ManagedWork[];cities:ManagedCity[];
- addIdol:(value:ManagedIdol)=>void;updateIdol:(id:string,value:Partial<ManagedIdol>)=>void;removeIdol:(id:string)=>void;
- addWork:(value:ManagedWork)=>void;updateWork:(id:string,value:Partial<ManagedWork>)=>void;removeWork:(id:string)=>void;
- addCity:(value:ManagedCity)=>void;updateCity:(id:string,value:Partial<ManagedCity>)=>void;removeCity:(id:string)=>void;hydrate:(data:{idols:ManagedIdol[];works:ManagedWork[];cities:ManagedCity[]})=>void
+ addIdol:(value:ManagedIdol)=>Promise<boolean>;updateIdol:(id:string,value:Partial<ManagedIdol>)=>Promise<boolean>;removeIdol:(id:string)=>Promise<boolean>;
+ addWork:(value:ManagedWork)=>Promise<boolean>;updateWork:(id:string,value:Partial<ManagedWork>)=>Promise<boolean>;removeWork:(id:string)=>Promise<boolean>;
+ addCity:(value:ManagedCity)=>Promise<boolean>;updateCity:(id:string,value:Partial<ManagedCity>)=>Promise<boolean>;removeCity:(id:string)=>Promise<boolean>;hydrate:(data:{idols:ManagedIdol[];works:ManagedWork[];cities:ManagedCity[]})=>void
 }
 const createdAt=new Date().toISOString()
 const seedCities:ManagedCity[]=[
@@ -84,11 +86,11 @@ function normalizeCities(value:unknown):ManagedCity[]{
  const names=new Set(normalized.map(city=>city.name.toLocaleLowerCase()))
  return[...normalized,...seedCities.filter(city=>!names.has(city.name.toLocaleLowerCase()))]
 }
-export const useBasicDataStore=create<BasicDataState>()((set)=>({
+export const useBasicDataStore=create<BasicDataState>()((set,get)=>({
  idols:normalizeIdols(readBasicData('xunji_idols',seedIdols)),works:normalizeWorks(readBasicData('xunji_works',seedWorks)),cities:normalizeCities(readBasicData('xunji_cities',seedCities)),
- addIdol:value=>set(s=>({idols:[value,...s.idols]})),updateIdol:(id,value)=>set(s=>({idols:s.idols.map(x=>x.id===id?{...x,...value}:x)})),removeIdol:id=>set(s=>({idols:s.idols.filter(x=>x.id!==id),works:s.works.map(w=>({...w,relatedIdolIds:w.relatedIdolIds.filter(x=>x!==id)}))})),
- addWork:value=>set(s=>({works:[value,...s.works]})),updateWork:(id,value)=>set(s=>({works:s.works.map(x=>x.id===id?{...x,...value}:x)})),removeWork:id=>set(s=>({works:s.works.filter(x=>x.id!==id)})),
- addCity:value=>set(s=>({cities:[value,...s.cities]})),updateCity:(id,value)=>set(s=>({cities:s.cities.map(x=>x.id===id?{...x,...value}:x)})),removeCity:id=>set(s=>({cities:s.cities.filter(x=>x.id!==id),idols:s.idols.map(i=>({...i,cities:i.cities.filter(x=>x!==id)})),works:s.works.map(w=>({...w,relatedCities:w.relatedCities.filter(x=>x!==id)}))})),hydrate:data=>set(data)
+ addIdol:async value=>{try{await upsertRow('idols',value);set(s=>({idols:[value,...s.idols.filter(x=>x.id!==value.id)]}));return true}catch(error){reportCloudError(error);return false}},updateIdol:async(id,value)=>{const current=get().idols.find(x=>x.id===id);if(!current)return false;const updated={...current,...value};try{await upsertRow('idols',updated);set(s=>({idols:s.idols.map(x=>x.id===id?updated:x)}));return true}catch(error){reportCloudError(error);return false}},removeIdol:async id=>{const state=get(),works=state.works.map(work=>work.relatedIdolIds.includes(id)?{...work,relatedIdolIds:work.relatedIdolIds.filter(value=>value!==id)}:work);try{await Promise.all([deleteRow('idols',id),...works.filter((work,index)=>work!==state.works[index]).map(work=>upsertRow('works',work))]);set({idols:state.idols.filter(value=>value.id!==id),works});return true}catch(error){reportCloudError(error);return false}},
+ addWork:async value=>{try{await upsertRow('works',value);set(s=>({works:[value,...s.works.filter(x=>x.id!==value.id)]}));return true}catch(error){reportCloudError(error);return false}},updateWork:async(id,value)=>{const current=get().works.find(x=>x.id===id);if(!current)return false;const updated={...current,...value};try{await upsertRow('works',updated);set(s=>({works:s.works.map(x=>x.id===id?updated:x)}));return true}catch(error){reportCloudError(error);return false}},removeWork:async id=>{try{await deleteRow('works',id);set(s=>({works:s.works.filter(x=>x.id!==id)}));return true}catch(error){reportCloudError(error);return false}},
+ addCity:async value=>{try{await upsertRow('cities',value);set(s=>({cities:[value,...s.cities.filter(x=>x.id!==value.id)]}));return true}catch(error){reportCloudError(error);return false}},updateCity:async(id,value)=>{const current=get().cities.find(x=>x.id===id);if(!current)return false;const updated={...current,...value};try{await upsertRow('cities',updated);set(s=>({cities:s.cities.map(x=>x.id===id?updated:x)}));return true}catch(error){reportCloudError(error);return false}},removeCity:async id=>{const state=get(),idols=state.idols.map(idol=>idol.cities.includes(id)?{...idol,cities:idol.cities.filter(value=>value!==id)}:idol),works=state.works.map(work=>work.relatedCities.includes(id)?{...work,relatedCities:work.relatedCities.filter(value=>value!==id)}:work);try{await Promise.all([deleteRow('cities',id),...idols.filter((idol,index)=>idol!==state.idols[index]).map(idol=>upsertRow('idols',idol)),...works.filter((work,index)=>work!==state.works[index]).map(work=>upsertRow('works',work))]);set({cities:state.cities.filter(value=>value.id!==id),idols,works});return true}catch(error){reportCloudError(error);return false}},hydrate:data=>set(data)
 }))
 if(typeof window!=='undefined'){
  const save=(state:BasicDataState)=>{localStorage.setItem('xunji_idols',JSON.stringify(state.idols));localStorage.setItem('xunji_works',JSON.stringify(state.works));localStorage.setItem('xunji_cities',JSON.stringify(state.cities))}
@@ -97,19 +99,19 @@ if(typeof window!=='undefined'){
 }
 export function recalculateBasicCounts(records:AdminPlace[]){
  const published=records.filter(place=>place.status==='published'),store=useBasicDataStore.getState()
- store.idols.forEach(idol=>{const count=published.filter(place=>(place.relatedIdolIds||[]).includes(idol.id)||(place.relatedIdolNames||place.relatedIdols).includes(idol.name)).length;if(idol.placeCount!==count)store.updateIdol(idol.id,{placeCount:count})})
- store.works.forEach(work=>{const count=published.filter(place=>(place.relatedWorkIds||[]).includes(work.id)||[...place.relatedMovies,...place.relatedVariety,...place.relatedTV,...(place.relatedOtherWorks||[])].includes(work.name)).length;if(work.placeCount!==count)store.updateWork(work.id,{placeCount:count})})
- store.cities.forEach(city=>{const count=published.filter(place=>place.city===city.name).length;if(city.placeCount!==count)store.updateCity(city.id,{placeCount:count})})
+ store.idols.forEach(idol=>{const count=published.filter(place=>(place.relatedIdolIds||[]).includes(idol.id)||(place.relatedIdolNames||place.relatedIdols).includes(idol.name)).length;if(idol.placeCount!==count)void store.updateIdol(idol.id,{placeCount:count})})
+ store.works.forEach(work=>{const count=published.filter(place=>(place.relatedWorkIds||[]).includes(work.id)||[...place.relatedMovies,...place.relatedVariety,...place.relatedTV,...(place.relatedOtherWorks||[])].includes(work.name)).length;if(work.placeCount!==count)void store.updateWork(work.id,{placeCount:count})})
+ store.cities.forEach(city=>{const count=published.filter(place=>place.city===city.name).length;if(city.placeCount!==count)void store.updateCity(city.id,{placeCount:count})})
 }
 
 export type FeedbackType='bug'|'suggestion'|'correction'
 export type FeedbackStatus='unread'|'read'|'replied'
 export interface Feedback{id:string;type:FeedbackType;content:string;contact?:string;status:FeedbackStatus;createdAt:string;reply?:string;repliedAt?:string}
-interface FeedbackState{items:Feedback[];add:(value:Feedback)=>void;markRead:(id:string)=>void;reply:(id:string,content:string)=>void;remove:(id:string)=>void}
-export const useFeedbackStore=create<FeedbackState>()(persist((set)=>({
+interface FeedbackState{items:Feedback[];add:(value:Feedback)=>Promise<boolean>;markRead:(id:string)=>Promise<boolean>;reply:(id:string,content:string)=>Promise<boolean>;remove:(id:string)=>Promise<boolean>;hydrate:(items:Feedback[])=>void}
+export const useFeedbackStore=create<FeedbackState>()(persist((set,get)=>({
  items:[],
- add:value=>set(s=>({items:[value,...s.items]})),
- markRead:id=>set(s=>({items:s.items.map(x=>x.id===id&&x.status==='unread'?{...x,status:'read'}:x)})),
- reply:(id,content)=>set(s=>({items:s.items.map(x=>x.id===id?{...x,status:'replied',reply:content,repliedAt:new Date().toISOString()}:x)})),
- remove:id=>set(s=>({items:s.items.filter(x=>x.id!==id)}))
+ add:async value=>{try{await upsertRow('feedback',value);set(s=>({items:[value,...s.items.filter(x=>x.id!==value.id)]}));return true}catch(error){reportCloudError(error);return false}},
+ markRead:async id=>{const current=get().items.find(x=>x.id===id);if(!current)return false;const updated={...current,status:'read' as const};try{await upsertRow('feedback',updated);set(s=>({items:s.items.map(x=>x.id===id?updated:x)}));return true}catch(error){reportCloudError(error);return false}},
+ reply:async(id,content)=>{const current=get().items.find(x=>x.id===id);if(!current)return false;const updated={...current,status:'replied' as const,reply:content,repliedAt:new Date().toISOString()};try{await upsertRow('feedback',updated);set(s=>({items:s.items.map(x=>x.id===id?updated:x)}));return true}catch(error){reportCloudError(error);return false}},
+ remove:async id=>{try{await deleteRow('feedback',id);set(s=>({items:s.items.filter(x=>x.id!==id)}));return true}catch(error){reportCloudError(error);return false}},hydrate:items=>set({items})
 }),{name:'xunji_feedback'}))
