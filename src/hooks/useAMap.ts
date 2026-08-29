@@ -13,8 +13,8 @@ function loadAMap(){
  if(!amapPromise)amapPromise=AMapLoader.load({key,version:'2.0',plugins:['AMap.Driving','AMap.Walking','AMap.Geocoder']}).catch(error=>{amapPromise=null;throw error})
  return amapPromise
 }
-function withTimeout<T>(promise:Promise<T>,milliseconds=10000):Promise<T>{
- return Promise.race([promise,new Promise<T>((_,reject)=>setTimeout(()=>reject(new Error('坐标解析超时，请检查高德 Key 类型或网络后重试')),milliseconds))])
+function withTimeout<T>(promise:Promise<T>,milliseconds=30000):Promise<T>{
+ return Promise.race([promise,new Promise<T>((_,reject)=>setTimeout(()=>reject(new Error('高德地图加载超时，请检查网络后重试')),milliseconds))])
 }
 export function preloadAMap(){return withTimeout(loadAMap())}
 export async function initMap(container:HTMLElement,options:Record<string,unknown>={}){
