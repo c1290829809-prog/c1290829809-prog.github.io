@@ -32,7 +32,7 @@ export function PlacePage(){
 }
 function MiniMapPreview({id,name,lng,lat}:{id:string;name:string;lng:number;lat:number}){
  const[failed,setFailed]=useState(false)
- const amapKey=(import.meta.env.VITE_AMAP_KEY||'').trim()
+ const amapKey=(import.meta.env.VITE_AMAP_WEB_SERVICE_KEY||'').trim()
  const validCoordinates=Number.isFinite(lng)&&Number.isFinite(lat)&&Math.abs(lng)>0.001&&Math.abs(lat)>0.001
  const staticMapUrl=amapKey&&validCoordinates?`https://restapi.amap.com/v3/staticmap?location=${lng},${lat}&zoom=15&size=420*300&scale=2&markers=mid,0xFF6B00,A:${lng},${lat}&key=${encodeURIComponent(amapKey)}`:''
  return <Link to={`/map?lng=${lng}&lat=${lat}&placeId=${encodeURIComponent(id)}`} aria-label={`在地图中查看 ${name}`} className="absolute -bottom-6 right-3 h-28 w-36 overflow-hidden rounded-[22px] border-4 border-white bg-[#e9e5dc] shadow-soft transition active:scale-95">

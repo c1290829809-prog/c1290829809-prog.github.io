@@ -3,7 +3,13 @@ export interface MapPoint{id:string;position:[number,number];title?:string}
 let amapPromise:Promise<any>|null=null
 function loadAMap(){
  const key=import.meta.env.VITE_AMAP_KEY
+ const securityJsCode=import.meta.env.VITE_AMAP_SECURITY_JS_CODE
  if(!key) return Promise.reject(new Error('尚未配置高德地图 Key'))
+ // 高德 JS API 2.0 要求在加载脚本前设置安全密钥。
+ if(securityJsCode&&typeof window!=='undefined'){
+  const amapWindow=window as typeof window&{_AMapSecurityConfig?:{securityJsCode?:string}}
+  amapWindow._AMapSecurityConfig={...amapWindow._AMapSecurityConfig,securityJsCode}
+ }
  if(!amapPromise)amapPromise=AMapLoader.load({key,version:'2.0',plugins:['AMap.Driving','AMap.Walking','AMap.Geocoder']}).catch(error=>{amapPromise=null;throw error})
  return amapPromise
 }
