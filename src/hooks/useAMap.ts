@@ -1,6 +1,11 @@
 import AMapLoader from '@amap/amap-jsapi-loader'
 export interface MapPoint{id:string;position:[number,number];title?:string}
 let amapPromise:Promise<any>|null=null
+function resetAMapLoader(){
+ amapPromise=null
+ const loader=AMapLoader as typeof AMapLoader&{reset?:()=>void}
+ loader.reset?.()
+}
 function loadAMap(){
  const key=import.meta.env.VITE_AMAP_KEY
  const securityJsCode=import.meta.env.VITE_AMAP_SECURITY_JS_CODE
@@ -10,11 +15,12 @@ function loadAMap(){
   const amapWindow=window as typeof window&{_AMapSecurityConfig?:{securityJsCode?:string}}
   amapWindow._AMapSecurityConfig={...amapWindow._AMapSecurityConfig,securityJsCode}
  }
- if(!amapPromise)amapPromise=AMapLoader.load({key,version:'2.0',plugins:['AMap.Driving','AMap.Walking','AMap.Geocoder']}).catch(error=>{amapPromise=null;throw error})
+ if(!amapPromise)amapPromise=AMapLoader.load({key,version:'2.0',plugins:['AMap.Driving','AMap.Walking','AMap.Geocoder']}).catch(error=>{resetAMapLoader();throw error})
  return amapPromise
 }
 function withTimeout<T>(promise:Promise<T>,milliseconds=30000):Promise<T>{
- return Promise.race([promise,new Promise<T>((_,reject)=>setTimeout(()=>reject(new Error('高德地图加载超时，请检查网络后重试')),milliseconds))])
+ let timer:ReturnType<typeof setTimeout>|undefined
+ return Promise.race([promise,new Promise<T>((_,reject)=>{timer=setTimeout(()=>{resetAMapLoader();reject(new Error('高德地图加载超时，请检查网络、Key 类型和安全域名后重试'))},milliseconds)})]).finally(()=>{if(timer)clearTimeout(timer)})
 }
 export function preloadAMap(){return withTimeout(loadAMap())}
 export async function initMap(container:HTMLElement,options:Record<string,unknown>={}){
