@@ -8,6 +8,7 @@ import type {Credibility} from '../types'
 import {getEvents,replaceEvents,type XunjiEvent} from '../services/analytics'
 import {useAdminAuth} from '../components/AdminAuth'
 import {importBackupToCloud,parseXunjiBackup,type BackupImportResult} from '../services/backup'
+import {ImageUploadControl} from '../components/ImageUploadControl'
 
 const relationNames:Record<string,string>={same_style:'同款',filming:'节目取景',public_event:'公开活动',personal_share:'个人分享',other:'其他'}
 const visitableNames:Record<string,string>={open:'正常开放',reservation:'需要预约',closed:'已关闭',private:'私人场所',unknown:'未知'}
@@ -103,7 +104,7 @@ export function AdminPlaceFormPage(){
     <Field label="经度 *" error={errors.lng}><Input value={f.lng} onChange={v=>set('lng',v)} placeholder="113.941"/></Field><Field label="纬度 *" error={errors.lat}><Input value={f.lat} onChange={v=>set('lat',v)} placeholder="22.515"/></Field>
     <Field label="开放时间 *" error={errors.openTime}><Input value={f.openTime} onChange={v=>set('openTime',v)} placeholder="例如：06:00-23:00"/></Field>
     <Field label="可到访性 *" error={errors.visitable}><select value={f.visitable} onChange={e=>set('visitable',e.target.value)} className={control}>{Object.entries(visitableNames).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></Field>
-    <div className="col-span-2"><Field label="地点图片 URL（选填）"><Input value={f.imageUrls} onChange={v=>set('imageUrls',v)} placeholder="多个图片URL用逗号分隔，没有可不填"/></Field></div>
+    <div className="col-span-2"><Field label="地点图片（选填）"><Input value={f.imageUrls} onChange={v=>set('imageUrls',v)} placeholder="可粘贴多个图片 URL（用逗号分隔）"/><ImageUploadControl value={f.imageUrls} onChange={v=>set('imageUrls',v)} folder="places" multiple/></Field></div>
    </div></section>
    <section className="mt-6 rounded-2xl bg-white p-8 shadow-sm"><SectionTitle number="02" title="关联与证据"/><div className="mt-6 grid grid-cols-2 gap-6">
     <div className="col-span-2"><Field label="关联爱豆"><input list="idol-suggestions" value={f.relatedIdols} onChange={event=>set('relatedIdols',event.target.value)} className={control} placeholder="输入爱豆名字，多个用逗号分隔，例如：RIIZE、周深"/><datalist id="idol-suggestions">{basic.idols.map(idol=><option key={idol.id} value={idol.name}/>)}</datalist>{newIdolNames.length>0&&<p className="mt-2 font-normal text-orange-600">将自动创建 Idol 主页：{newIdolNames.join('、')}</p>}{f.relatedIdols&&newIdolNames.length===0&&<p className="mt-2 font-normal text-emerald-600">已匹配现有 Idol 资料</p>}</Field></div>
