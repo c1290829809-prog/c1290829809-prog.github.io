@@ -1,4 +1,5 @@
 import type {Credibility,RelationType} from '../types'
+import {callCloudAi} from './aiCloud'
 
 type IdolReference={id:string;name:string}
 
@@ -32,19 +33,8 @@ export async function extractPlaceFromText(
  context:GuideContext={}
 ):Promise<ExtractedPlaceData>{
  try{
-  const response=await fetch('/api/ai/extract',{
-   method:'POST',
-   headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({
-    text,
-    idolNames:idols.map(item=>item.name),
-    context,
-    generateGuide:true
-   })
-  })
-  const payload=await response.json().catch(()=>null)
-  if(!response.ok||!payload?.data) throw new Error(payload?.error||'AI 服务暂不可用')
-  return normalizeResult(payload.data,text,idols,'ai')
+  const data=await callCloudAi<Record<string,unknown>>('extract-place',{text,idolNames:idols.map(item=>item.name),context,generateGuide:true})
+  return normalizeResult(data,text,idols,'ai')
  }catch{
   const fallback=await extractPlaceWithRules(text,idols,context)
   return {

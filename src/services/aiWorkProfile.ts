@@ -1,4 +1,5 @@
 import type {WorkType} from '../stores'
+import {callCloudAi} from './aiCloud'
 
 export interface WorkProfileDraft{
  name:string
@@ -24,14 +25,7 @@ export interface WorkProfileContext{
 }
 
 export async function generateWorkProfile(name:string,context:WorkProfileContext={}):Promise<WorkProfileDraft>{
- const response=await fetch('/api/ai/work-profile',{
-  method:'POST',
-  headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({name:name.trim(),context})
- })
- const payload=await response.json().catch(()=>null)
- if(!response.ok||!payload?.data) throw new Error(payload?.error||'AI 作品资料补全暂不可用')
- const data=payload.data as Record<string,unknown>
+ const data=await callCloudAi<Record<string,unknown>>('work-profile',{name:name.trim(),context})
  const validTypes:WorkType[]=['movie','tv','variety','book','music','other']
  const type=validTypes.includes(data.type as WorkType)?data.type as WorkType:context.type||'other'
  const year=Number(data.year)
