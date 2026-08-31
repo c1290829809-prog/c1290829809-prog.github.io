@@ -19,6 +19,7 @@ export interface AdminPlace{
  relatedIdols:string[];relatedIdolNames?:string[];relatedIdolIds?:string[];relatedMovies:string[];relatedVariety:string[];relatedTV:string[];relatedOtherWorks?:string[];relatedWorkIds?:string[];
  relationType:string;relationDesc:string;evidence:string;credibility:Credibility|null;status:'pending'|'published'|'rejected';createdAt:string;reviewNote?:string;reviewOpinion?:string;reviewedAt?:string
  transportGuide?:string;coreSpots?:string;tips?:string
+ coordinatesPending?:boolean
 }
 const reportCloudError=(error:unknown)=>{const message=error instanceof Error?error.message:'云端操作失败';console.error(message,error);if(typeof window!=='undefined')window.alert(`${message}\n数据没有保存，请稍后重试。`)}
 interface AdminState{records:AdminPlace[];addRecord:(record:AdminPlace)=>Promise<boolean>;updateRecord:(id:string,changes:Partial<AdminPlace>)=>Promise<boolean>;reviewRecord:(id:string,status:'published'|'rejected',credibility:Credibility|null,reviewNote:string)=>Promise<boolean>;removeRecord:(id:string)=>Promise<boolean>;hydrateRecords:(records:AdminPlace[])=>void}
