@@ -9,6 +9,8 @@ const clean=(value:unknown)=>typeof value==='string'?value.trim():value===undefi
 const split=(value:unknown)=>clean(value).split(/[、,，/]/).map(item=>item.trim()).filter(Boolean)
 const coordinate=(value:unknown)=>{const next=Number(clean(value).replace(/[＊*]/g,''));return Number.isFinite(next)&&next!==0?next:null}
 const keyFor=(row:Pick<Draft,'placeName'|'city'|'address'>)=>[row.placeName,row.city,row.address].map(value=>clean(value).toLocaleLowerCase()).join('|')
+const nameKey=(value:unknown)=>clean(value).replace(/\s+/g,'').toLocaleLowerCase()
+const idPart=(value:string)=>nameKey(value).replace(/[^a-z0-9\u4e00-\u9fff]/g,'').slice(0,24)||'item'
 const updateField=(row:Draft,key:keyof BatchPlaceDraft,value:string):Draft=>({...row,[key]:value})
 
 export function AdminBatchImageImportPage(){
@@ -32,10 +34,13 @@ export function AdminBatchImageImportPage(){
   setBusy(true);setError('');setResult('')
   try{
    const data=await extractPlacesFromImage(imageDataUrl)
+   const seen=new Set(existing)
    const next=(Array.isArray(data.rows)?data.rows:[]).map((item,index)=>{
     const row={...item,id:`draft-${Date.now()}-${index}`,selected:true,duplicate:false}
-    row.duplicate=existing.has(keyFor(row))
+    const key=keyFor(row)
+    row.duplicate=seen.has(key)
     row.selected=!row.duplicate
+    seen.add(key)
     return row
    })
    if(!next.length)throw new Error('没有从图片中识别到可导入的地点，请换一张清晰的表格截图')
@@ -51,25 +56,55 @@ export function AdminBatchImageImportPage(){
   if(!confirm(`确认把 ${selected.length} 条已核对的地点导入云端待审核队列吗？它们不会直接发布到前台。`))return
   setImporting(true);setError('');let imported=0;const failed:string[]=[]
   const knownCities=new Set(basic.cities.map(city=>city.name.toLocaleLowerCase()))
+  const citiesByName=new Map(basic.cities.map(city=>[nameKey(city.name),city]))
+  const idolsByName=new Map(basic.idols.map(idol=>[nameKey(idol.name),idol]))
+  const worksByName=new Map(basic.works.map(work=>[nameKey(work.name),work]))
+  const importedKeys=new Set(existing)
   for(const row of selected){
    try{
     const city=clean(row.city),cityKey=city.toLocaleLowerCase()
+    const placeKey=keyFor(row)
+    if(importedKeys.has(placeKey)){failed.push(`${clean(row.placeName)}（重复）`);continue}
+    let cityRecord=citiesByName.get(nameKey(city))
     if(!knownCities.has(cityKey)){
      const region=city==='深圳'?'广东省':city==='上海'?'上海市':city==='重庆'?'重庆市':city==='北京'?'北京市':'待补充'
-     const created=await basic.addCity({id:`city-auto-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,name:city,region,cover:'',story:'',iconUrl:'',placeCount:0,routeCount:0,autoCreated:true,createdAt:new Date().toISOString()})
+     cityRecord={id:`city-auto-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,name:city,region,cover:'',story:'',iconUrl:'',placeCount:0,routeCount:0,autoCreated:true,createdAt:new Date().toISOString()}
+     const created=await basic.addCity(cityRecord)
      if(!created)throw new Error('城市资料创建失败')
      knownCities.add(cityKey)
+     citiesByName.set(nameKey(city),cityRecord)
     }
     const lat=coordinate(row.lat),lng=coordinate(row.lng)
     const works=split(row.relatedWorks),people=split(row.relatedPeople)
+    const idolIds:string[]=[]
+    for(const name of people){
+     const key=nameKey(name);let idol=idolsByName.get(key)
+     if(!idol){
+      idol={id:`idol-import-${idPart(name)}-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,name,avatar:'',roles:[],bio:'由图片批量识别自动创建，待补充公开资料。',cities:cityRecord?[cityRecord.id]:[],cityNames:[city],placeCount:0,createdAt:new Date().toISOString()}
+      if(!await basic.addIdol(idol))throw new Error(`爱豆“${name}”创建失败`)
+      idolsByName.set(key,idol)
+     }
+     idolIds.push(idol.id)
+    }
+    const workIds:string[]=[]
+    for(const name of works){
+     const key=nameKey(name);let work=worksByName.get(key)
+     if(!work){
+      work={id:`work-import-${idPart(name)}-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,name,type:'other',cover:'',quote:'由图片批量识别自动创建，待补充公开资料。',relatedIdolIds:idolIds,relatedIdolNames:people,relatedCities:cityRecord?[cityRecord.id]:[],cityNames:[city],placeCount:0,createdAt:new Date().toISOString()}
+      if(!await basic.addWork(work))throw new Error(`作品“${name}”创建失败`)
+      worksByName.set(key,work)
+     }
+     workIds.push(work.id)
+    }
     const content=[clean(row.type),clean(row.relation)].filter(Boolean).join(' · ')
     const source=clean(row.source)||'图片批量识别录入，待人工核验原始资料'
     const record:AdminPlace={
      id:`place-import-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
      name:clean(row.placeName),city,address:clean(row.address),lng:lng??0,lat:lat??0,coordinatesPending:lat===null||lng===null,
-     openTime:'待核实',visitable:'unknown',images:[],relatedIdols:people,relatedIdolNames:people,relatedMovies:works,relatedVariety:[],relatedTV:[],relatedOtherWorks:[],relationType:'filming',relationDesc:content||'来源表格中的关联关系，待人工核验',evidence:source,credibility:null,status:'pending',createdAt:new Date().toISOString()
+     openTime:'待核实',visitable:'unknown',images:[],relatedIdols:people,relatedIdolNames:people,relatedIdolIds:idolIds,relatedMovies:works,relatedVariety:[],relatedTV:[],relatedOtherWorks:[],relatedWorkIds:workIds,relationType:'filming',relationDesc:content||'来源表格中的关联关系，待人工核验',evidence:source,credibility:null,status:'pending',createdAt:new Date().toISOString()
     }
     if(!await addRecord(record))throw new Error('地点保存失败')
+    importedKeys.add(placeKey)
     imported++
    }catch{failed.push(clean(row.placeName)||'未命名地点')}
   }
@@ -90,7 +125,7 @@ export function AdminBatchImageImportPage(){
    {rows.length>0&&<section className="overflow-hidden rounded-2xl bg-white shadow-sm"><div className="flex items-center justify-between gap-6 border-b border-slate-100 p-6"><div><h2 className="text-xl font-black">2. 核对识别结果</h2><p className="mt-1 text-sm text-slate-500">勾选的完整记录会进入待审核队列，不会直接对外展示。</p></div><span className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700">待导入 {selected.length} 条</span></div>
     {missingCore>0&&<p className="mx-6 mt-5 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">有 {missingCore} 条缺少名称、城市或地址，补全后才可以导入。</p>}
     <div className="overflow-x-auto"><table className="min-w-[1200px] w-full text-left text-sm"><thead className="bg-slate-50 text-slate-500"><tr><th className="w-14 px-5 py-4">导入</th><th>地点 / 城市</th><th>地址</th><th>关联人物 / 作品</th><th>纬度 / 经度</th><th>关系与来源</th><th className="pr-5">操作</th></tr></thead><tbody>{rows.map(row=>{const incomplete=!clean(row.placeName)||!clean(row.city)||!clean(row.address);const noCoords=coordinate(row.lat)===null||coordinate(row.lng)===null;return <tr key={row.id} className={`border-t border-slate-100 align-top ${row.duplicate?'bg-slate-50 opacity-60':''}`}><td className="px-5 py-5"><input type="checkbox" checked={row.selected} disabled={row.duplicate} onChange={event=>setRow(row.id,current=>({...current,selected:event.target.checked}))} className="h-4 w-4 accent-orange-500"/></td><td className="py-4 pr-3"><Cell value={clean(row.placeName)} placeholder="地点名称 *" onChange={value=>setRow(row.id,current=>updateField(current,'placeName',value))}/><Cell value={clean(row.city)} placeholder="城市 *" onChange={value=>setRow(row.id,current=>updateField(current,'city',value))}/>{row.district&&<p className="mt-1 text-xs text-slate-400">{row.district}</p>}</td><td className="py-4 pr-3"><Cell value={clean(row.address)} placeholder="详细地址 *" multiline onChange={value=>setRow(row.id,current=>updateField(current,'address',value))}/></td><td className="py-4 pr-3"><Cell value={clean(row.relatedPeople)} placeholder="关联人物" onChange={value=>setRow(row.id,current=>updateField(current,'relatedPeople',value))}/><Cell value={clean(row.relatedWorks)} placeholder="关联作品" onChange={value=>setRow(row.id,current=>updateField(current,'relatedWorks',value))}/></td><td className="py-4 pr-3"><Cell value={clean(row.lat)} placeholder="待补充" onChange={value=>setRow(row.id,current=>updateField(current,'lat',value))}/><Cell value={clean(row.lng)} placeholder="待补充" onChange={value=>setRow(row.id,current=>updateField(current,'lng',value))}/>{noCoords&&<span className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">需补坐标</span>}</td><td className="py-4 pr-3"><Cell value={clean(row.relation)} placeholder="关联关系" multiline onChange={value=>setRow(row.id,current=>updateField(current,'relation',value))}/><Cell value={clean(row.source)} placeholder="资料来源" multiline onChange={value=>setRow(row.id,current=>updateField(current,'source',value))}/></td><td className="py-4 pr-5">{row.duplicate?<span className="rounded-full bg-slate-200 px-2 py-1 text-xs font-bold text-slate-600">已存在</span>:incomplete?<span className="rounded-full bg-red-100 px-2 py-1 text-xs font-bold text-red-700">信息不完整</span>:<span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-bold text-amber-800">待审核</span>}<button type="button" aria-label="移除此条" onClick={()=>setRows(current=>current.filter(item=>item.id!==row.id))} className="mt-3 flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600"><X size={17}/></button></td></tr>})}</tbody></table></div>
-    <div className="flex items-center justify-between gap-5 border-t border-slate-100 p-6"><p className="text-xs leading-5 text-slate-500">导入时会自动建立尚不存在的城市为“自动创建”。人物和作品仅作为文字关联，不会被自动创建，避免把 AI 识别结果误认为已核实资料。</p><button type="button" onClick={()=>void importRows()} disabled={importing||!selected.length} className="inline-flex min-h-12 shrink-0 items-center gap-2 rounded-xl bg-emerald-700 px-6 font-bold text-white disabled:opacity-50">{importing?<LoaderCircle className="animate-spin" size={18}/>:<CheckCircle2 size={18}/>}{importing?'正在写入云端…':`确认导入 ${selected.length} 条`}</button></div>
+    <div className="flex items-center justify-between gap-5 border-t border-slate-100 p-6"><p className="text-xs leading-5 text-slate-500">导入时会自动建立尚不存在的城市、爱豆与作品，并关联到地点；自动创建的资料会标记为“待补充公开资料”。系统会按地点名称、城市和地址拦截已有记录及本次图片内的重复行。</p><button type="button" onClick={()=>void importRows()} disabled={importing||!selected.length} className="inline-flex min-h-12 shrink-0 items-center gap-2 rounded-xl bg-emerald-700 px-6 font-bold text-white disabled:opacity-50">{importing?<LoaderCircle className="animate-spin" size={18}/>:<CheckCircle2 size={18}/>}{importing?'正在写入云端…':`确认导入 ${selected.length} 条`}</button></div>
    </section>}
    {result&&<div role="status" className="rounded-xl bg-emerald-50 p-5 text-sm font-semibold text-emerald-800">{result}</div>}
   </section>
