@@ -3,7 +3,7 @@ import {FormEvent,useState} from 'react'
 import {Link,useLocation,useNavigate,useSearchParams} from 'react-router-dom'
 import {extractPlaceFromText,type ExtractedPlaceData} from '../services/aiExtractor'
 import {recalculateBasicCounts,useAdminStore,useBasicDataStore,useFeedbackStore} from '../stores'
-import type {AdminPlace} from '../stores'
+import type {AdminPlace,ManagedIdol} from '../stores'
 import type {Credibility} from '../types'
 import {getEvents,replaceEvents,type XunjiEvent} from '../services/analytics'
 import {useAdminAuth} from '../components/AdminAuth'
@@ -14,6 +14,24 @@ const relationNames:Record<string,string>={same_style:'同款',filming:'节目�
 const visitableNames:Record<string,string>={open:'正常开放',reservation:'需要预约',closed:'已关闭',private:'私人场所',unknown:'未知'}
 const control='min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm outline-none transition focus:border-accent focus:ring-2 focus:ring-red-100'
 const splitValues=(value:string)=>value.split(/[,，]/).map(x=>x.trim()).filter(Boolean)
+
+const normalizeIdolName=(value:string)=>value.trim().replace(/\s+/g,' ').toLocaleLowerCase()
+const uniqueValues=(values:string[])=>[...new Set(values)]
+const splitRelatedIdolNames=(values:string[])=>{
+ const names:string[]=[]
+ for(const value of values){
+  for(const part of value.split(/[、,，/&＋+;；\n]/)){
+   let name=part.trim()
+   // “SEVENTEEN成员 Mingyu”这类历史写法只保留实际成员名，避免生成组合名主页。
+   name=name.replace(/^(?:[A-Za-z0-9가-힣]+(?:成员|member|members)\s*[:：]?\s*)/i,'').trim()
+   const groupPrefix=/^[A-Z0-9]{2,}\s+(.+)$/.exec(name)
+   if(groupPrefix)name=groupPrefix[1].trim()
+   if(!name||name.length>40||/^(无|暂无|未知|待核实|成员)$/i.test(name))continue
+   names.push(name)
+  }
+ }
+ return names.filter((name,index)=>names.findIndex(item=>normalizeIdolName(item)===normalizeIdolName(name))===index)
+}
 
 export function AdminShell({children,title,subtitle}:{children:React.ReactNode;title:string;subtitle:string}){
  const pathname=useLocation().pathname
@@ -158,6 +176,54 @@ export function AdminReviewPage(){
  </AdminShell>
 }
 
+function LinkedIdolProfileBackfill(){
+ const records=useAdminStore(s=>s.records),updateRecord=useAdminStore(s=>s.updateRecord)
+ const idols=useBasicDataStore(s=>s.idols),cities=useBasicDataStore(s=>s.cities),addIdol=useBasicDataStore(s=>s.addIdol)
+ const[busy,setBusy]=useState(false),[notice,setNotice]=useState('')
+ const existingByName=new Map(idols.map(idol=>[normalizeIdolName(idol.name),idol]))
+ const names=splitRelatedIdolNames(records.flatMap(record=>Array.isArray(record.relatedIdolNames)&&record.relatedIdolNames.length?record.relatedIdolNames:record.relatedIdols||[]))
+ const missing=names.filter(name=>!existingByName.has(normalizeIdolName(name)))
+ const backfill=async()=>{
+  if(!missing.length){setNotice('所有关联爱豆都已有个人主页，地点关联会在保存时继续保持同步。');return}
+  const preview=missing.slice(0,12).join('、')
+  if(!confirm(`将创建 ${missing.length} 个爱豆主页：${preview}${missing.length>12?' 等':''}\n\n新资料会标记为“待补充”，并把已有地点关联到对应主页。确定继续吗？`))return
+  setBusy(true);setNotice('正在创建爱豆主页并补全地点关联…')
+  try{
+   const currentByName=new Map(useBasicDataStore.getState().idols.map(idol=>[normalizeIdolName(idol.name),idol]))
+   const locationsByName=new Map<string,AdminPlace[]>()
+   records.forEach(record=>splitRelatedIdolNames(Array.isArray(record.relatedIdolNames)&&record.relatedIdolNames.length?record.relatedIdolNames:record.relatedIdols||[]).forEach(name=>{
+    const key=normalizeIdolName(name);locationsByName.set(key,[...(locationsByName.get(key)||[]),record])
+   }))
+   let created=0
+   for(const name of missing){
+    const key=normalizeIdolName(name)
+    if(currentByName.has(key))continue
+    const relatedLocations=locationsByName.get(key)||[]
+    const cityNames=uniqueValues(relatedLocations.map(item=>item.city).filter(Boolean))
+    const cityIds=cityNames.map(cityName=>cities.find(city=>normalizeIdolName(city.name)===normalizeIdolName(cityName))?.id).filter((id):id is string=>Boolean(id))
+    const idol:ManagedIdol={id:`idol-auto-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,name,avatar:'',roles:[],bio:'由已录入地点的关联信息自动创建，公开资料待补充。',cities:cityIds,cityNames,fanName:'',placeCount:0,createdAt:new Date().toISOString()}
+    if(!await addIdol(idol))throw new Error(`“${name}”的主页未能保存到云端`)
+    currentByName.set(key,idol);created++
+   }
+   let linked=0
+   for(const record of records){
+    const relatedNames=splitRelatedIdolNames(Array.isArray(record.relatedIdolNames)&&record.relatedIdolNames.length?record.relatedIdolNames:record.relatedIdols||[])
+    if(!relatedNames.length)continue
+    const relatedIds=relatedNames.map(name=>currentByName.get(normalizeIdolName(name))?.id).filter((id):id is string=>Boolean(id))
+    const hasSameNames=relatedNames.length===(record.relatedIdolNames||[]).length&&relatedNames.every((name,index)=>name===(record.relatedIdolNames||[])[index])
+    const hasSameIds=relatedIds.length===(record.relatedIdolIds||[]).length&&relatedIds.every((id,index)=>id===(record.relatedIdolIds||[])[index])
+    if(hasSameNames&&hasSameIds)continue
+    if(!await updateRecord(record.id,{relatedIdols:relatedNames,relatedIdolNames:relatedNames,relatedIdolIds:relatedIds}))throw new Error(`“${record.name}”的关联未能保存到云端`)
+    linked++
+   }
+   recalculateBasicCounts(useAdminStore.getState().records)
+   setNotice(`已创建 ${created} 个爱豆主页，并补全 ${linked} 条地点关联。新主页已标记“待补充”。`)
+  }catch(error){setNotice(error instanceof Error?`${error.message}；请稍后重试。`:'补全未完成，请稍后重试。')}
+  finally{setBusy(false)}
+ }
+ return <section className="mb-6 rounded-2xl border border-violet-100 bg-gradient-to-r from-violet-50 to-white p-5 shadow-sm"><div className="flex items-center justify-between gap-5"><div><h2 className="flex items-center gap-2 font-black text-slate-900"><Sparkles size={19} className="text-violet-600"/>一键补全关联爱豆主页</h2><p className="mt-1.5 text-sm text-slate-600">自动拆分多人姓名、跳过已有主页，并关联旧地点。新建资料会保留“待补充”标记。</p>{missing.length>0&&<p className="mt-2 text-sm font-semibold text-violet-700">待创建 {missing.length} 个：{missing.slice(0,8).join('、')}{missing.length>8?' 等':''}</p>}</div><button type="button" onClick={()=>void backfill()} disabled={busy||missing.length===0} className="min-h-12 shrink-0 rounded-xl bg-violet-700 px-5 font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50">{busy?'正在补全…':missing.length?`补全 ${missing.length} 个主页`:'已全部补全'}</button></div>{notice&&<p role="status" className="mt-4 rounded-xl bg-white/90 p-3 text-sm font-semibold text-slate-700">{notice}</p>}</section>
+}
+
 export function AdminContentPage(){
  const records=useAdminStore(s=>s.records),remove=useAdminStore(s=>s.removeRecord),update=useAdminStore(s=>s.updateRecord)
  const[params]=useSearchParams()
@@ -165,6 +231,7 @@ export function AdminContentPage(){
  const cities=[...new Set(records.map(item=>item.city))].sort()
  const filtered=records.filter(item=>{const haystack=[item.name,...item.relatedIdols,...item.relatedMovies,...item.relatedVariety,...item.relatedTV,...(item.relatedOtherWorks||[])].join(' ').toLowerCase();return haystack.includes(query.toLowerCase())&&(status==='all'||item.status===status)&&(city==='all'||item.city===city)})
  return <AdminShell title="数据管理" subtitle="搜索、筛选、编辑和删除全部地点数据">
+  <LinkedIdolProfileBackfill/>
   <section className="mb-6 grid grid-cols-[1fr_180px_180px] gap-3 rounded-2xl bg-white p-5 shadow-sm"><label className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-300 px-4"><Search size={18} className="text-slate-400"/><input value={query} onChange={event=>setQuery(event.target.value)} className="w-full outline-none" placeholder="搜索地点、爱豆或作品"/></label><select value={status} onChange={event=>setStatus(event.target.value)} className={control}><option value="all">全部状态</option><option value="pending">待审核</option><option value="published">已发布</option><option value="rejected">已驳回</option></select><select value={city} onChange={event=>setCity(event.target.value)} className={control}><option value="all">全部城市</option>{cities.map(value=><option key={value}>{value}</option>)}</select></section>
   <section className="overflow-x-auto rounded-2xl bg-white shadow-sm"><table className="min-w-[1050px] w-full text-left text-sm"><thead className="bg-slate-50 text-slate-500"><tr><th className="px-6 py-4">地点</th><th>城市</th><th>关联爱豆</th><th>关联作品</th><th>关系类型</th><th>状态</th><th className="pr-6 text-right">操作</th></tr></thead><tbody>{filtered.map(item=><tr key={item.id} className="border-t border-slate-100"><td className="px-6 py-4 font-semibold">{item.name}</td><td>{item.city}</td><td>{item.relatedIdols.join('、')||'无'}</td><td className="max-w-64 truncate">{joinedWorks(item)||'无'}</td><td>{relationNames[item.relationType]||item.relationType}</td><td><StatusBadge status={item.status}/></td><td className="pr-6 text-right"><button onClick={()=>setEditing(item)} className="inline-flex h-11 w-11 items-center justify-center text-slate-500 hover:text-blue-600" aria-label="编辑"><Edit3 size={18}/></button><button onClick={()=>confirm(`确定删除“${item.name}”吗？此操作无法恢复。`)&&remove(item.id)} className="inline-flex h-11 w-11 items-center justify-center text-slate-500 hover:text-red-600" aria-label="删除"><Trash2 size={18}/></button></td></tr>)}</tbody></table>{filtered.length===0&&<div className="py-20 text-center text-slate-500">没有符合筛选条件的地点</div>}</section>
   {editing&&<EditPlaceModal place={editing} onClose={()=>setEditing(null)} onSave={async changes=>{if(await update(editing.id,changes))setEditing(null)}}/>}
