@@ -35,7 +35,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
 .xj-page img{border-radius:inherit}
 .xj-action{background:var(--xj-accent);box-shadow:0 10px 26px rgba(217,119,56,.22)}
 .xj-muted{color:var(--xj-text-3)}
-.xj-sheet{background:rgba(255,255,255,.82);-webkit-backdrop-filter:saturate(180%) blur(22px);backdrop-filter:saturate(180%) blur(22px);box-shadow:0 2px 8px rgba(0,0,0,.10),0 30px 80px rgba(0,0,0,.24);transition:transform .4s var(--xj-ease-spring),opacity .4s var(--xj-ease-spring),backdrop-filter .4s var(--xj-ease-spring)}
+.xj-sheet{background:rgba(255,255,255,.82);-webkit-backdrop-filter:saturate(180%) blur(22px);backdrop-filter:saturate(180%) blur(22px);box-shadow:0 2px 8px rgba(0,0,0,.10),0 30px 80px rgba(0,0,0,.24);transition:height .4s var(--xj-ease-spring),transform .4s var(--xj-ease-spring),opacity .4s var(--xj-ease-spring),backdrop-filter .4s var(--xj-ease-spring)}
 .xj-hairline>*>*:not(:last-child){border-color:var(--xj-hairline)}
 @media (prefers-reduced-motion:reduce){.xj-sheet{transition:opacity .2s ease;transform:none!important}}
 @media (prefers-reduced-transparency:reduce){.xj-sheet{background:#fff;-webkit-backdrop-filter:none;backdrop-filter:none}}
