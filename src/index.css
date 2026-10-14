@@ -1,6 +1,8 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+.xj-reduced-motion *, .xj-reduced-motion *::before, .xj-reduced-motion *::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 :root{
   --xj-ground:#F5F5F7;--xj-surface:#fff;--xj-text:#1D1D1F;--xj-text-body:#424245;--xj-text-2:#6E6E73;--xj-text-3:#86868B;
   --xj-accent:#D97738;--xj-accent-strong:#C86434;--xj-accent-soft:rgba(217,119,56,.11);--xj-hairline:rgba(0,0,0,.07);
