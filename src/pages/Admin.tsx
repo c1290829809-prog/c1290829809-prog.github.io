@@ -233,10 +233,48 @@ export function AdminContentPage(){
  const filtered=records.filter(item=>{const haystack=[item.name,...item.relatedIdols,...item.relatedMovies,...item.relatedVariety,...item.relatedTV,...(item.relatedOtherWorks||[])].join(' ').toLowerCase();return haystack.includes(query.toLowerCase())&&(status==='all'||item.status===status)&&(city==='all'||item.city===city)})
  return <AdminShell title="数据管理" subtitle="搜索、筛选、编辑和删除全部地点数据">
   <LinkedIdolProfileBackfill/>
+  <CoordinateBackfill/>
   <section className="mb-6 grid grid-cols-[1fr_180px_180px] gap-3 rounded-2xl bg-white p-5 shadow-sm"><label className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-300 px-4"><Search size={18} className="text-slate-400"/><input value={query} onChange={event=>setQuery(event.target.value)} className="w-full outline-none" placeholder="搜索地点、爱豆或作品"/></label><select value={status} onChange={event=>setStatus(event.target.value)} className={control}><option value="all">全部状态</option><option value="pending">待审核</option><option value="published">已发布</option><option value="rejected">已驳回</option></select><select value={city} onChange={event=>setCity(event.target.value)} className={control}><option value="all">全部城市</option>{cities.map(value=><option key={value}>{value}</option>)}</select></section>
   <section className="overflow-x-auto rounded-2xl bg-white shadow-sm"><table className="min-w-[1050px] w-full text-left text-sm"><thead className="bg-slate-50 text-slate-500"><tr><th className="px-6 py-4">地点</th><th>城市</th><th>关联爱豆</th><th>关联作品</th><th>关系类型</th><th>状态</th><th className="pr-6 text-right">操作</th></tr></thead><tbody>{filtered.map(item=><tr key={item.id} className="border-t border-slate-100"><td className="px-6 py-4 font-semibold">{item.name}</td><td>{item.city}</td><td>{item.relatedIdols.join('、')||'无'}</td><td className="max-w-64 truncate">{joinedWorks(item)||'无'}</td><td>{relationNames[item.relationType]||item.relationType}</td><td><StatusBadge status={item.status}/></td><td className="pr-6 text-right"><button onClick={()=>setEditing(item)} className="inline-flex h-11 w-11 items-center justify-center text-slate-500 hover:text-blue-600" aria-label="编辑"><Edit3 size={18}/></button><button onClick={()=>confirm(`确定删除“${item.name}”吗？此操作无法恢复。`)&&remove(item.id)} className="inline-flex h-11 w-11 items-center justify-center text-slate-500 hover:text-red-600" aria-label="删除"><Trash2 size={18}/></button></td></tr>)}</tbody></table>{filtered.length===0&&<div className="py-20 text-center text-slate-500">没有符合筛选条件的地点</div>}</section>
   {editing&&<EditPlaceModal place={editing} onClose={()=>setEditing(null)} onSave={async changes=>{if(await update(editing.id,changes))setEditing(null)}}/>}
  </AdminShell>
+}
+
+function CoordinateBackfill(){
+ const records=useAdminStore(state=>state.records),updateRecord=useAdminStore(state=>state.updateRecord)
+ const targets=records.filter(place=>place.coordinatesPending||!Number.isFinite(place.lng)||!Number.isFinite(place.lat)||Math.abs(place.lng)<0.001||Math.abs(place.lat)<0.001)
+ const[busy,setBusy]=useState(false),[progress,setProgress]=useState({done:0,total:0}),[notice,setNotice]=useState('')
+ const wait=(milliseconds:number)=>new Promise(resolve=>setTimeout(resolve,milliseconds))
+ const resolve=async(place:AdminPlace)=>{
+  const attempts=uniqueValues([`${place.city}${place.address}`.trim(),`${place.city}${place.name}`.trim(),place.address.trim(),place.name.trim()]).filter(Boolean)
+  let lastError='未解析到坐标'
+  for(const query of attempts){
+   try{
+    const[lng,lat]=await geocodeAddress(query,place.city)
+    if(Number.isFinite(lng)&&Number.isFinite(lat)&&Math.abs(lng)>0.001&&Math.abs(lat)>0.001)return{lng,lat}
+   }catch(error){lastError=error instanceof Error?error.message:lastError}
+  }
+  throw new Error(lastError)
+ }
+ const run=async()=>{
+  if(!targets.length||busy)return
+  if(!confirm(`将使用高德地图自动解析 ${targets.length} 个缺失坐标的地点。解析成功后会立即保存到 Supabase，是否继续？`))return
+  setBusy(true);setNotice('');setProgress({done:0,total:targets.length})
+  let success=0;const failures:string[]=[]
+  for(let index=0;index<targets.length;index++){
+   const place=targets[index]
+   try{
+    const{lng,lat}=await resolve(place)
+    if(await updateRecord(place.id,{lng,lat,coordinatesPending:false}))success++
+    else failures.push(place.name)
+   }catch{failures.push(place.name)}
+   setProgress({done:index+1,total:targets.length})
+   if(index<targets.length-1)await wait(220)
+  }
+  setNotice(`坐标补全完成：成功 ${success} 个，失败 ${failures.length} 个。${failures.length?`失败项：${failures.slice(0,6).join('、')}${failures.length>6?' 等':''}`:''}`)
+  setBusy(false)
+ }
+ return <section className="mb-6 rounded-2xl border border-sky-100 bg-gradient-to-r from-sky-50 to-white p-5 shadow-sm"><div className="flex items-center justify-between gap-5"><div><h2 className="flex items-center gap-2 font-black text-slate-900"><MapPin size={19} className="text-sky-600"/>一键补全地点坐标</h2><p className="mt-1.5 text-sm text-slate-600">通过高德 JS API 按“城市 + 地址 + 地点名”依次解析，成功后直接保存云端；失败项不会写入错误坐标。</p><p className="mt-2 text-sm font-semibold text-sky-700">当前有 {targets.length} 个地点需要补坐标{busy?` · 正在处理 ${progress.done}/${progress.total}`:''}</p></div><button type="button" onClick={()=>void run()} disabled={busy||targets.length===0} className="min-h-12 shrink-0 rounded-xl bg-sky-700 px-5 font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50">{busy?`处理中 ${progress.done}/${progress.total}`:targets.length?`补全 ${targets.length} 个坐标`:'坐标已齐全'}</button></div>{busy&&<div className="mt-4 h-2 overflow-hidden rounded-full bg-sky-100"><div className="h-full rounded-full bg-sky-500 transition-all" style={{width:`${progress.total?progress.done/progress.total*100:0}%`}}/></div>}{notice&&<p role="status" className="mt-4 rounded-xl bg-white/90 p-3 text-sm font-semibold text-slate-700">{notice}</p>}</section>
 }
 
 function EditPlaceModal({place,onClose,onSave}:{place:AdminPlace;onClose:()=>void;onSave:(changes:Partial<AdminPlace>)=>Promise<void>}){
