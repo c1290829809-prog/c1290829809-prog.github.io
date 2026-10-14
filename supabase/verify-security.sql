@@ -12,7 +12,7 @@ select
 select tablename,policyname,cmd,roles
 from pg_policies
 where schemaname='public'
-  and tablename in ('places','idols','works','cities','feedback','events','admin_users')
+  and tablename in ('places','idols','works','cities','feedback','events','admin_users','user_preferences')
 order by tablename,policyname;
 
 select

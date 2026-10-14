@@ -3,13 +3,17 @@ import type {Session,User} from '@supabase/supabase-js'
 import {Navigate,Outlet,useLocation} from 'react-router-dom'
 import {cloudEnabled,getSession,isCurrentUserAdmin,supabase} from '../services/supabase'
 
-type AuthValue={session:Session|null;user:User|null;isAdmin:boolean;loading:boolean;signIn:(email:string,password:string)=>Promise<void>;signOut:()=>Promise<void>}
+type AuthValue={session:Session|null;user:User|null;isAdmin:boolean;loading:boolean;signIn:(email:string,password:string)=>Promise<void>;signInUser:(email:string,password:string)=>Promise<void>;signUp:(email:string,password:string)=>Promise<{needsConfirmation:boolean}>;signOut:()=>Promise<void>}
 const AuthContext=createContext<AuthValue|null>(null)
 
 export function SupabaseAuthProvider({children}:{children:React.ReactNode}){
  const[session,setSession]=useState<Session|null>(null),[isAdmin,setIsAdmin]=useState(false),[loading,setLoading]=useState(true)
  useEffect(()=>{let active=true;const apply=async(next:Session|null)=>{if(!active)return;setSession(next);try{setIsAdmin(next?await isCurrentUserAdmin():false)}catch(error){console.error('管理员权限校验失败',error);setIsAdmin(false)}finally{if(active)setLoading(false)}};void getSession().then(apply).catch(()=>setLoading(false));const subscription=supabase?.auth.onAuthStateChange((_event,next)=>{window.setTimeout(()=>{void apply(next)},0)}).data.subscription;return()=>{active=false;subscription?.unsubscribe()}},[])
- const value=useMemo<AuthValue>(()=>({session,user:session?.user||null,isAdmin,loading,signIn:async(email,password)=>{if(!cloudEnabled||!supabase)throw new Error('Supabase 未配置');const{data,error}=await supabase.auth.signInWithPassword({email:email.trim(),password});if(error)throw new Error(error.message);if(!data.session)throw new Error('登录失败，请重试');try{if(!await isCurrentUserAdmin())throw new Error('该账号没有循迹后台管理员权限')}catch(error){await supabase.auth.signOut();throw error}setSession(data.session);setIsAdmin(true)},signOut:async()=>{if(supabase)await supabase.auth.signOut();setSession(null);setIsAdmin(false)}}),[session,isAdmin,loading])
+ const value=useMemo<AuthValue>(()=>({session,user:session?.user||null,isAdmin,loading,
+  signIn:async(email,password)=>{if(!cloudEnabled||!supabase)throw new Error('Supabase 未配置');const{data,error}=await supabase.auth.signInWithPassword({email:email.trim(),password});if(error)throw new Error(error.message);if(!data.session)throw new Error('登录失败，请重试');try{if(!await isCurrentUserAdmin())throw new Error('该账号没有循迹后台管理员权限')}catch(error){await supabase.auth.signOut();throw error}setSession(data.session);setIsAdmin(true)},
+  signInUser:async(email,password)=>{if(!cloudEnabled||!supabase)throw new Error('Supabase 未配置');const{data,error}=await supabase.auth.signInWithPassword({email:email.trim(),password});if(error)throw new Error(error.message);if(!data.session)throw new Error('登录失败，请检查邮箱和密码');setSession(data.session)},
+  signUp:async(email,password)=>{if(!cloudEnabled||!supabase)throw new Error('Supabase 未配置');const{data,error}=await supabase.auth.signUp({email:email.trim(),password,options:{emailRedirectTo:window.location.origin+window.location.pathname+'#/profile'}});if(error)throw new Error(error.message);if(data.session)setSession(data.session);return{needsConfirmation:!data.session}},
+  signOut:async()=>{if(supabase)await supabase.auth.signOut();setSession(null);setIsAdmin(false)}}),[session,isAdmin,loading])
  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

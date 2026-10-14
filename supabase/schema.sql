@@ -8,6 +8,7 @@ create table if not exists public.cities (id text primary key, data jsonb not nu
 create table if not exists public.feedback (id text primary key, data jsonb not null, updated_at timestamptz not null default now());
 create table if not exists public.events (id text primary key, data jsonb not null, updated_at timestamptz not null default now());
 create table if not exists public.admin_users (user_id uuid primary key references auth.users(id) on delete cascade,created_at timestamptz not null default now());
+create table if not exists public.user_preferences (user_id uuid primary key references auth.users(id) on delete cascade,data jsonb not null default '{}'::jsonb,updated_at timestamptz not null default now());
 
 alter table public.places enable row level security;
 alter table public.idols enable row level security;
@@ -16,6 +17,7 @@ alter table public.cities enable row level security;
 alter table public.feedback enable row level security;
 alter table public.events enable row level security;
 alter table public.admin_users enable row level security;
+alter table public.user_preferences enable row level security;
 
 create or replace function public.is_admin()
 returns boolean
@@ -32,7 +34,7 @@ grant execute on function public.is_admin() to anon,authenticated;
 do $$
 declare target_table text; policy_row record;
 begin
-  foreach target_table in array array['places','idols','works','cities','feedback','events','admin_users'] loop
+  foreach target_table in array array['places','idols','works','cities','feedback','events','admin_users','user_preferences'] loop
     for policy_row in select policyname from pg_policies where schemaname='public' and tablename=target_table loop
       execute format('drop policy if exists %I on public.%I',policy_row.policyname,target_table);
     end loop;
@@ -40,10 +42,12 @@ begin
 end $$;
 
 revoke all on public.places,public.idols,public.works,public.cities,public.feedback,public.events,public.admin_users from anon,authenticated;
+revoke all on public.user_preferences from anon,authenticated;
 grant select on public.places,public.idols,public.works,public.cities to anon,authenticated;
 grant insert,update,delete on public.places,public.idols,public.works,public.cities to authenticated;
 grant insert on public.feedback,public.events to anon,authenticated;
 grant select,update,delete on public.feedback,public.events to authenticated;
+grant select,insert,update,delete on public.user_preferences to authenticated;
 
 create policy "places public published read" on public.places for select to anon,authenticated using ((data->>'status'='published') or public.is_admin());
 create policy "places admin write" on public.places for all to authenticated using (public.is_admin()) with check (public.is_admin());
@@ -61,4 +65,6 @@ create policy "feedback admin manage" on public.feedback for all to authenticate
 create policy "events public submit" on public.events for insert to anon,authenticated with check (data->>'type' in ('page_view','favorite_click','route_generate','route_add','search_submit') and coalesce(data->>'time','')<>'');
 create policy "events admin manage" on public.events for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
-select tablename,rowsecurity from pg_tables where schemaname='public' and tablename in ('places','idols','works','cities','feedback','events','admin_users') order by tablename;
+create policy "users manage own preferences" on public.user_preferences for all to authenticated using (auth.uid()=user_id) with check (auth.uid()=user_id);
+
+select tablename,rowsecurity from pg_tables where schemaname='public' and tablename in ('places','idols','works','cities','feedback','events','admin_users','user_preferences') order by tablename;

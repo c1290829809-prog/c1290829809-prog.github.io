@@ -53,3 +53,21 @@ export async function isCurrentUserAdmin(){
  if(error)throw new Error(`管理员权限校验失败：${error.message}`)
  return data===true
 }
+
+export interface UserPreferences{
+ favoritePlaceIds:string[]
+ routePlaceIds:string[]
+ followedIdolIds:string[]
+ updatedAt:string
+}
+
+export async function readUserPreferences(userId:string){
+ const{data,error}=await requireClient().from('user_preferences').select('data').eq('user_id',userId).maybeSingle()
+ if(error)throw new Error(`读取个人数据失败：${error.message}`)
+ return(data?.data||null) as UserPreferences|null
+}
+
+export async function saveUserPreferences(userId:string,data:UserPreferences){
+ const{error}=await requireClient().from('user_preferences').upsert({user_id:userId,data,updated_at:new Date().toISOString()},{onConflict:'user_id'})
+ if(error)throw new Error(`同步个人数据失败：${error.message}`)
+}
